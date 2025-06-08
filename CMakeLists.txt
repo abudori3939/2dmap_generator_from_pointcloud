@@ -18,6 +18,7 @@ add_executable(occupancy_grid_map_generator
     src/map_parameters.cpp
     src/map_io.cpp
     src/point_cloud_processor.cpp # Added point_cloud_processor.cpp
+    src/pipeline.cpp
 )
 
 target_link_libraries(occupancy_grid_map_generator
