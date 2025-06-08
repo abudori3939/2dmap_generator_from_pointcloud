@@ -85,7 +85,8 @@ bool PointCloudProcessor::extractGroundCandidates(
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
     const pcl::PointCloud<pcl::Normal>::ConstPtr& normals,
     float ground_normal_z_thresh,
-    pcl::PointCloud<pcl::PointXYZ>::Ptr& ground_candidates_cloud) {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr& ground_candidates_cloud,
+    pcl::PointIndices::Ptr& ground_candidate_indices) { // Added ground_candidate_indices
 
     if (!input_cloud || input_cloud->points.empty()) {
         std::cerr << "エラー (GroundCandidates): 入力点群が空または無効です。" << std::endl;
@@ -104,7 +105,12 @@ bool PointCloudProcessor::extractGroundCandidates(
         std::cerr << "エラー (GroundCandidates): 地面候補点群ポインタが無効 (null) です。" << std::endl;
         return false;
     }
+    if (!ground_candidate_indices) {
+        std::cerr << "エラー (GroundCandidates): 地面候補インデックスポインタが無効 (null) です。" << std::endl;
+        return false;
+    }
     ground_candidates_cloud->clear();
+    ground_candidate_indices->indices.clear(); // Clear indices
 
     if (ground_normal_z_thresh < 0.0f || ground_normal_z_thresh > 1.0f) {
          std::cerr << "警告 (GroundCandidates): ground_normal_z_thresh (" << ground_normal_z_thresh
@@ -113,29 +119,51 @@ bool PointCloudProcessor::extractGroundCandidates(
 
     std::cout << "地面候補点の抽出を開始します... Z法線閾値 (絶対値比較): " << ground_normal_z_thresh << std::endl;
 
-    ground_candidates_cloud->points.reserve(input_cloud->points.size());
+    // ground_candidates_cloud->points.reserve(input_cloud->points.size()); // Not needed if using ExtractIndices
+    ground_candidate_indices->indices.reserve(input_cloud->points.size());
+
 
     for (size_t i = 0; i < input_cloud->points.size(); ++i) {
-        const auto& point = input_cloud->points[i];
+        // const auto& point = input_cloud->points[i]; // Not needed directly for indices
         const auto& normal = normals->points[i];
 
         if (!pcl::isFinite(normal)) {
             continue;
         }
         if (std::abs(normal.normal_z) > ground_normal_z_thresh) {
-            ground_candidates_cloud->points.push_back(point);
+            // ground_candidates_cloud->points.push_back(point); // Old way
+            ground_candidate_indices->indices.push_back(static_cast<int>(i)); // New way: store index
         }
     }
 
-    ground_candidates_cloud->width = ground_candidates_cloud->points.size();
-    ground_candidates_cloud->height = 1;
-    ground_candidates_cloud->is_dense = true;
+    std::cout << "地面候補インデックスの収集完了。収集されたインデックス数: " << ground_candidate_indices->indices.size() << std::endl;
 
-    std::cout << "地面候補点の抽出が完了しました。抽出された点数: " << ground_candidates_cloud->points.size() << std::endl;
+    // Extract the points using the collected indices
+    if (!ground_candidate_indices->indices.empty()) {
+        pcl::ExtractIndices<pcl::PointXYZ> extract;
+        extract.setInputCloud(input_cloud);
+        extract.setIndices(ground_candidate_indices);
+        extract.setNegative(false); // Extract the points specified by the indices
+        extract.filter(*ground_candidates_cloud);
+        std::cout << "地面候補点の抽出 (ExtractIndices) が完了しました。抽出された点数: " << ground_candidates_cloud->points.size() << std::endl;
+    } else {
+        std::cout << "警告 (GroundCandidates): 地面候補インデックスが空のため、候補点群も空になります。" << std::endl;
+        // Ensure cloud is empty and valid
+        ground_candidates_cloud->points.clear();
+        ground_candidates_cloud->width = 0;
+        ground_candidates_cloud->height = 1;
+        ground_candidates_cloud->is_dense = true;
+    }
 
+
+    if (ground_candidates_cloud->points.empty() && !ground_candidate_indices->indices.empty()){
+         std::cerr << "エラー (GroundCandidates): インデックスはあったが、点の抽出に失敗しました。" << std::endl;
+         return false;
+    }
     if (ground_candidates_cloud->points.empty()){
         std::cout << "警告 (GroundCandidates): 地面候補点が抽出されませんでした。" << std::endl;
     }
+
     return true;
 }
 
@@ -290,6 +318,363 @@ bool PointCloudProcessor::fitGlobalGroundPlane(
               << output_plane_coefficients->values[3] << std::endl;
 
     return true;
+}
+
+void PointCloudProcessor::visualizePlane(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+    const pcl::ModelCoefficients::ConstPtr& plane_coefficients) {
+
+    if (!cloud) {
+        std::cerr << "VisualizePlane: Input cloud is null." << std::endl;
+        return;
+    }
+    if (!plane_coefficients) {
+        std::cerr << "VisualizePlane: Plane coefficients are null." << std::endl;
+        return;
+    }
+    if (plane_coefficients->values.size() != 4) {
+        std::cerr << "VisualizePlane: Invalid plane coefficients (size != 4)." << std::endl;
+        return;
+    }
+
+    std::cout << "Visualizing plane and cloud..." << std::endl;
+    std::cout << "  Cloud points: " << cloud->size() << std::endl;
+    std::cout << "  Plane coefficients: "
+              << plane_coefficients->values[0] << ", "
+              << plane_coefficients->values[1] << ", "
+              << plane_coefficients->values[2] << ", "
+              << plane_coefficients->values[3] << std::endl;
+
+    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
+    viewer->setBackgroundColor(0, 0, 0);
+
+    // Add point cloud
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> cloud_color_handler(cloud, 255, 255, 255); // White
+    viewer->addPointCloud<pcl::PointXYZ>(cloud, cloud_color_handler, "input_cloud");
+    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "input_cloud");
+
+    // Add plane
+    if (!plane_coefficients->values.empty()) {
+        viewer->addPlane(*plane_coefficients, "ground_plane");
+        viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 1.0, 0.0, 0.0, "ground_plane"); // Red
+        viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_OPACITY, 0.5, "ground_plane"); // Semi-transparent
+    } else {
+        std::cerr << "VisualizePlane: Plane coefficients are empty, cannot add plane to viewer." << std::endl;
+    }
+
+
+    viewer->addCoordinateSystem(1.0);
+    viewer->initCameraParameters();
+
+    // Set camera position (example)
+    viewer->setCameraPosition(0, 0, -2, 0, -1, 0); // Adjust as needed
+
+    std::cout << "Starting visualization loop. Close the viewer window to continue." << std::endl;
+    while (!viewer->wasStopped()) {
+        viewer->spinOnce(100); // 100 ms
+        // std::this_thread::sleep_for(std::chrono::milliseconds(100)); // If using C++11 thread
+    }
+    std::cout << "Visualization stopped." << std::endl;
+}
+
+bool PointCloudProcessor::rotateCloudToHorizontal(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
+    const pcl::ModelCoefficients::ConstPtr& plane_coefficients,
+    pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
+    Eigen::Matrix4f& final_transformation) { // Renamed to avoid conflict
+
+    if (!input_cloud || input_cloud->points.empty()) {
+        std::cerr << "RotateCloud: Input cloud is null or empty." << std::endl;
+        return false;
+    }
+    if (!plane_coefficients || plane_coefficients->values.size() != 4) {
+        std::cerr << "RotateCloud: Plane coefficients are null or invalid." << std::endl;
+        return false;
+    }
+    if (!output_cloud) {
+        std::cerr << "RotateCloud: Output cloud pointer is null." << std::endl;
+        return false;
+    }
+    output_cloud->clear();
+    std::cout << "Rotating cloud to horizontal..." << std::endl;
+
+    // 1. Calculate the centroid of the input_cloud
+    Eigen::Vector4f centroid_vec;
+    pcl::compute3DCentroid(*input_cloud, centroid_vec);
+    pcl::PointXYZ centroid_pt(centroid_vec[0], centroid_vec[1], centroid_vec[2]);
+    std::cout << "  Centroid: " << centroid_pt.x << ", " << centroid_pt.y << ", " << centroid_pt.z << std::endl;
+
+    // 2. Extract the plane normal vector (a, b, c)
+    Eigen::Vector3f current_normal(
+        plane_coefficients->values[0],
+        plane_coefficients->values[1],
+        plane_coefficients->values[2]
+    );
+    current_normal.normalize(); // Ensure it's a unit vector
+    std::cout << "  Current normal: " << current_normal.x() << ", " << current_normal.y() << ", " << current_normal.z() << std::endl;
+
+    // 3. Define the target normal vector
+    Eigen::Vector3f target_normal(0.0f, 0.0f, 1.0f);
+    if (current_normal.z() < 0.0f) { // If original normal points "downwards"
+        target_normal.z() = -1.0f; // Target "downwards" to minimize rotation
+        std::cout << "  Current normal's Z is negative, target normal set to <0,0,-1>" << std::endl;
+    }
+     // Ensure D coefficient is positive if normal is <0,0,1> or negative if normal is <0,0,-1>
+    // This is a common convention for plane equations (e.g. Ax+By+Cz+D=0, where D is distance from origin if normal is unit)
+    // If normal is (0,0,1) and D is positive, plane is below origin. If D is negative, plane is above.
+    // To align with XY plane *at z=0 after rotation*, the D term of rotated plane should be 0.
+    // The current D value (plane_coefficients->values[3]) relates to the *original* normal.
+
+    // Check for collinearity / no rotation needed
+    if (current_normal.isApprox(target_normal, 1e-4f)) {
+        std::cout << "  Cloud is already horizontal or very close. Copying input to output." << std::endl;
+        pcl::copyPointCloud(*input_cloud, *output_cloud);
+        final_transformation = Eigen::Matrix4f::Identity();
+        return true;
+    }
+    if (current_normal.isApprox(-target_normal, 1e-4f)) {
+         std::cout << "  Cloud is already horizontal but upside down. Rotating 180 degrees around X-axis." << std::endl;
+         // Rotate 180 degrees around X-axis to flip it up if it's upside down and aligned with Z
+        Eigen::AngleAxisf rotation(M_PI, Eigen::Vector3f::UnitX());
+        Eigen::Matrix3f rotation_matrix_3d = rotation.toRotationMatrix();
+        final_transformation = Eigen::Matrix4f::Identity();
+        final_transformation.block<3,3>(0,0) = rotation_matrix_3d;
+    } else {
+        // 4. Calculate the rotation axis
+        Eigen::Vector3f rotation_axis = current_normal.cross(target_normal);
+        rotation_axis.normalize();
+        std::cout << "  Rotation axis: " << rotation_axis.x() << ", " << rotation_axis.y() << ", " << rotation_axis.z() << std::endl;
+
+        // 5. Calculate the rotation angle
+        float rotation_angle = acos(current_normal.dot(target_normal));
+        std::cout << "  Rotation angle (rad): " << rotation_angle << " (" << rotation_angle * 180.0 / M_PI << " deg)" << std::endl;
+
+        if (std::isnan(rotation_angle) || std::abs(rotation_angle) < 1e-6) {
+             std::cout << "  No rotation needed (angle is zero or NaN). Copying input to output." << std::endl;
+             pcl::copyPointCloud(*input_cloud, *output_cloud);
+             final_transformation = Eigen::Matrix4f::Identity();
+             return true;
+        }
+
+
+        // 6. Create an Eigen::AngleAxisf object
+        Eigen::AngleAxisf rotation(rotation_angle, rotation_axis);
+
+        // 7. Convert to a 4x4 transformation matrix (rotation around origin)
+        Eigen::Matrix4f rotation_around_origin = Eigen::Matrix4f::Identity();
+        rotation_around_origin.block<3,3>(0,0) = rotation.toRotationMatrix();
+        final_transformation = rotation_around_origin; // Store this part first
+    }
+
+
+    // 8. Rotate around the cloud centroid
+    Eigen::Matrix4f t_centroid_to_origin = Eigen::Matrix4f::Identity();
+    t_centroid_to_origin(0,3) = -centroid_pt.x;
+    t_centroid_to_origin(1,3) = -centroid_pt.y;
+    t_centroid_to_origin(2,3) = -centroid_pt.z;
+
+    Eigen::Matrix4f t_origin_to_centroid = Eigen::Matrix4f::Identity();
+    t_origin_to_centroid(0,3) = centroid_pt.x;
+    t_origin_to_centroid(1,3) = centroid_pt.y;
+    t_origin_to_centroid(2,3) = centroid_pt.z;
+
+    // The final transformation is T_origin_to_centroid * RotationMatrixAroundOrigin * T_centroid_to_origin
+    // However, PCL's transformPointCloud applies the transformation *as is* to each point.
+    // To rotate around centroid, we need to translate to origin, rotate, then translate back.
+    // So the matrix applied to points should be T_origin_to_centroid * RotationMatrix * T_centroid_to_origin
+    final_transformation = t_origin_to_centroid * final_transformation * t_centroid_to_origin;
+
+
+    // 9. Apply this transformation to input_cloud
+    pcl::transformPointCloud(*input_cloud, *output_cloud, final_transformation);
+    std::cout << "  Cloud rotated. Output cloud points: " << output_cloud->size() << std::endl;
+
+    // 10. Store the combined rotation transformation (already done in final_transformation)
+    return true;
+}
+
+
+bool PointCloudProcessor::translateCloudToZZero(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud, // Should be the rotated cloud
+    pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
+    Eigen::Matrix4f& translation_transform) {
+
+    if (!input_cloud || input_cloud->points.empty()) {
+        std::cerr << "TranslateCloud: Input cloud is null or empty." << std::endl;
+        return false;
+    }
+    if (!output_cloud) {
+        std::cerr << "TranslateCloud: Output cloud pointer is null." << std::endl;
+        return false;
+    }
+    output_cloud->clear();
+    std::cout << "Translating cloud to Z=0..." << std::endl;
+
+    // 1. Calculate the centroid of the input_cloud (the already rotated cloud).
+    // The z-value of this centroid is the amount we need to translate by.
+    Eigen::Vector4f centroid_vec;
+    pcl::compute3DCentroid(*input_cloud, centroid_vec);
+    // pcl::PointXYZ rotated_centroid_pt(centroid_vec[0], centroid_vec[1], centroid_vec[2]);
+    float translate_z = -centroid_vec[2]; // Translate by negative of current average Z
+
+    std::cout << "  Rotated cloud centroid Z: " << centroid_vec[2] << ", Translation Z: " << translate_z << std::endl;
+
+    // 2. Create an Eigen::Translation3f for this translation along the Z-axis.
+    Eigen::Translation3f translation(0.0f, 0.0f, translate_z);
+
+    // 3. Convert this to a 4x4 transformation matrix
+    translation_transform = Eigen::Matrix4f::Identity();
+    translation_transform.block<3,1>(0,3) = translation.vector();
+
+    // 4. Apply this transformation
+    pcl::transformPointCloud(*input_cloud, *output_cloud, translation_transform);
+    std::cout << "  Cloud translated. Output cloud points: " << output_cloud->size() << std::endl;
+
+    // Verify new centroid Z (optional debug)
+    Eigen::Vector4f new_centroid_vec;
+    pcl::compute3DCentroid(*output_cloud, new_centroid_vec);
+    std::cout << "  New centroid Z after translation: " << new_centroid_vec[2] << std::endl;
+
+    return true;
+}
+
+void PointCloudProcessor::visualizeCloud(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+    const std::string& window_title) {
+
+    if (!cloud) {
+        std::cerr << "VisualizeCloud: Input cloud is null." << std::endl;
+        return;
+    }
+
+    std::cout << "Visualizing cloud in window: " << window_title << "..." << std::endl;
+    std::cout << "  Cloud points: " << cloud->size() << std::endl;
+
+    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer(window_title));
+    viewer->setBackgroundColor(0.1, 0.1, 0.1); // Darker background
+
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> cloud_color_handler(cloud, 0, 255, 0); // Green
+    viewer->addPointCloud<pcl::PointXYZ>(cloud, cloud_color_handler, "cloud_to_viz");
+    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "cloud_to_viz");
+
+    // 2. Create and add the XY plane at Z=0
+    pcl::ModelCoefficients::Ptr xy_plane(new pcl::ModelCoefficients());
+    xy_plane->values.resize(4);
+    xy_plane->values[0] = 0; // X component of normal
+    xy_plane->values[1] = 0; // Y component of normal
+    xy_plane->values[2] = 1; // Z component of normal (points upwards)
+    xy_plane->values[3] = 0; // d (distance from origin, so Z=0)
+    viewer->addPlane(*xy_plane, "xy_plane_z0");
+    viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 1.0, "xy_plane_z0"); // Blue
+    viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_OPACITY, 0.5, "xy_plane_z0"); // Semi-transparent
+
+
+    // 3. Add a coordinate system marker
+    viewer->addCoordinateSystem(1.0); // Scale of 1.0 for the axis
+    viewer->initCameraParameters();
+    // Example camera position - adjust as needed for better view, ensuring origin and plane are visible
+    viewer->setCameraPosition(0, -3, 3, 0, 0, 0); // Looking towards origin from -Y, Z slightly up
+
+
+    std::cout << "Starting visualization loop for window '" << window_title << "'. Close the viewer window to continue." << std::endl;
+    while (!viewer->wasStopped()) {
+        viewer->spinOnce(100);
+    }
+    std::cout << "Visualization stopped for window '" << window_title << "'." << std::endl;
+}
+
+bool PointCloudProcessor::extractNonHorizontalPoints(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& original_cloud,
+    const pcl::PointIndices::ConstPtr& ground_candidate_indices,
+    pcl::PointCloud<pcl::PointXYZ>::Ptr& non_horizontal_cloud) {
+
+    if (!original_cloud) {
+        std::cerr << "ExtractNonHorizontal: Input original_cloud is null." << std::endl;
+        return false;
+    }
+    if (!ground_candidate_indices) {
+        std::cerr << "ExtractNonHorizontal: Input ground_candidate_indices is null." << std::endl;
+        return false;
+    }
+    if (!non_horizontal_cloud) {
+        std::cerr << "ExtractNonHorizontal: Output non_horizontal_cloud pointer is null." << std::endl;
+        return false;
+    }
+    non_horizontal_cloud->clear();
+
+    if (original_cloud->points.empty()) {
+        std::cout << "ExtractNonHorizontal: Input original_cloud is empty. Output will be empty." << std::endl;
+        return true; // Technically successful, nothing to do
+    }
+
+    std::cout << "非水平要素の抽出を開始します... 入力点数: " << original_cloud->size()
+              << ", 地面候補インデックス数: " << ground_candidate_indices->indices.size() << std::endl;
+
+    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    extract.setInputCloud(original_cloud);
+    extract.setIndices(ground_candidate_indices);
+    extract.setNegative(true); // Extract points NOT in ground_candidate_indices
+
+    try {
+        extract.filter(*non_horizontal_cloud);
+    } catch (const std::exception& e) {
+        std::cerr << "エラー (ExtractNonHorizontal): 非水平要素の抽出中に例外が発生しました: " << e.what() << std::endl;
+        return false;
+    }
+
+    std::cout << "非水平要素の抽出が完了しました。抽出された点数: " << non_horizontal_cloud->points.size() << std::endl;
+    return true;
+}
+
+void PointCloudProcessor::visualizeCombinedClouds(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& ground_cloud,
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& nonground_cloud,
+    const std::string& window_title) {
+
+    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer(window_title));
+    viewer->setBackgroundColor(0.1, 0.1, 0.15); // Slightly different background
+
+    // Add ground cloud (green)
+    if (ground_cloud && !ground_cloud->points.empty()) {
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> ground_color(ground_cloud, 0, 255, 0); // Green
+        viewer->addPointCloud<pcl::PointXYZ>(ground_cloud, ground_color, "transformed_ground_cloud");
+        viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "transformed_ground_cloud");
+        std::cout << "Visualizing transformed ground cloud with " << ground_cloud->size() << " points." << std::endl;
+    } else {
+        std::cout << "Transformed ground cloud is empty or null, not visualizing." << std::endl;
+    }
+
+    // Add non-ground cloud (red)
+    if (nonground_cloud && !nonground_cloud->points.empty()) {
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> nonground_color(nonground_cloud, 255, 0, 0); // Red
+        viewer->addPointCloud<pcl::PointXYZ>(nonground_cloud, nonground_color, "transformed_nonground_cloud");
+        viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "transformed_nonground_cloud");
+        std::cout << "Visualizing transformed non-ground cloud with " << nonground_cloud->size() << " points." << std::endl;
+    } else {
+        std::cout << "Transformed non-ground cloud is empty or null, not visualizing." << std::endl;
+    }
+
+    // Add the XY plane at Z=0 (blue, semi-transparent)
+    pcl::ModelCoefficients::Ptr xy_plane(new pcl::ModelCoefficients());
+    xy_plane->values.resize(4);
+    xy_plane->values[0] = 0; // X component of normal
+    xy_plane->values[1] = 0; // Y component of normal
+    xy_plane->values[2] = 1; // Z component of normal (points upwards)
+    xy_plane->values[3] = 0; // d (distance from origin, so Z=0)
+    viewer->addPlane(*xy_plane, "xy_plane_z0");
+    viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 1.0, "xy_plane_z0"); // Blue
+    viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_OPACITY, 0.5, "xy_plane_z0");
+
+    // Add coordinate system
+    viewer->addCoordinateSystem(1.0);
+    viewer->initCameraParameters();
+    viewer->setCameraPosition(0, -4, 2, 0, 0, 0); // Adjusted for potentially larger combined view
+
+    std::cout << "Starting visualization loop for window '" << window_title << "'. Close the viewer window to continue." << std::endl;
+    while (!viewer->wasStopped()) {
+        viewer->spinOnce(100);
+    }
+    std::cout << "Visualization stopped for window '" << window_title << "'." << std::endl;
 }
 
 } // namespace proc

@@ -7,6 +7,10 @@
 #include <pcl/PointIndices.h>      // For inliers
 #include <pcl/search/kdtree.h>
 #include <pcl/search/search.h>
+#include <pcl/visualization/pcl_visualizer.h> // For PCLVisualizer
+#include <pcl/common/common.h>                // For centroid calculation
+#include <pcl/common/transforms.h>            // For point cloud transformation
+#include <Eigen/Geometry>                     // For AngleAxisf, Matrix4f etc.
 
 namespace map_config {
     struct Config;
@@ -29,7 +33,8 @@ public:
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
         const pcl::PointCloud<pcl::Normal>::ConstPtr& normals,
         float ground_normal_z_thresh,
-        pcl::PointCloud<pcl::PointXYZ>::Ptr& ground_candidates_cloud
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& ground_candidates_cloud,
+        pcl::PointIndices::Ptr& ground_candidate_indices // Added output for indices
     );
 
     bool extractMainGroundCluster(
@@ -53,6 +58,43 @@ public:
         float distance_threshold,
         pcl::ModelCoefficients::Ptr& output_plane_coefficients,
         pcl::PointIndices::Ptr& output_plane_inliers
+    );
+
+    void visualizePlane(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+        const pcl::ModelCoefficients::ConstPtr& plane_coefficients
+    );
+
+    bool rotateCloudToHorizontal(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
+        const pcl::ModelCoefficients::ConstPtr& plane_coefficients,
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
+        Eigen::Matrix4f& rotation_transform // Output parameter
+    );
+
+    bool translateCloudToZZero(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud, // Should be the rotated cloud
+        // const Eigen::Matrix4f& rotation_transform, // May not be needed if cloud is already rotated
+        // const pcl::ModelCoefficients::ConstPtr& original_plane_coefficients, // May not be needed
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
+        Eigen::Matrix4f& translation_transform      // Output parameter
+    );
+
+    void visualizeCloud(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+        const std::string& window_title
+    );
+
+    bool extractNonHorizontalPoints(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& original_cloud,
+        const pcl::PointIndices::ConstPtr& ground_candidate_indices,
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& non_horizontal_cloud
+    );
+
+    void visualizeCombinedClouds(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& ground_cloud,
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& nonground_cloud,
+        const std::string& window_title
     );
 
 private:

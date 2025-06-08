@@ -19,6 +19,7 @@
 // PCL Visualization
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/common/io.h> // For copyPointCloud
+#include <pcl/common/transforms.h> // For pcl::transformPointCloud
 #include <pcl/search/kdtree.h> // For KdTree used in visualization coloring (restored)
 
 // Helper function to get file extension (lowercase)
@@ -106,11 +107,23 @@ int main(int argc, char* argv[]) {
 
     //   3.5.2 地面候補点の抽出 (Ground Candidate Extraction)
     pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>());
-    if (!processor.extractGroundCandidates(cloud, normals, static_cast<float>(app_config.ground_normal_z_threshold), ground_candidates)) {
+    pcl::PointIndices::Ptr ground_candidate_indices(new pcl::PointIndices); // Declare indices
+    if (!processor.extractGroundCandidates(cloud, normals, static_cast<float>(app_config.ground_normal_z_threshold), ground_candidates, ground_candidate_indices)) {
         std::cerr << "エラー: 地面候補点の抽出に失敗しました。プログラムを終了します。" << std::endl;
         return 1;
     }
-    std::cout << "地面候補点の抽出成功。候補点数: " << ground_candidates->size() << std::endl;
+    std::cout << "地面候補点の抽出成功。候補点数: " << ground_candidates->size() << ", インデックス数: " << ground_candidate_indices->indices.size() << std::endl;
+
+    // Extract non-horizontal points
+    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Declare earlier for wider scope
+    if (processor.extractNonHorizontalPoints(cloud, ground_candidate_indices, non_horizontal_cloud)) {
+        std::cout << "非水平要素の抽出成功。非水平点群の点数: " << non_horizontal_cloud->size() << std::endl;
+        // Optionally, visualize non_horizontal_cloud here if needed for debugging
+        // processor.visualizeCloud(non_horizontal_cloud, "Non-Horizontal Points");
+    } else {
+        std::cerr << "警告: 非水平要素の抽出に失敗しました。" << std::endl;
+    }
 
     //   3.5.3 地面候補点の可視化 (Visualization of Ground Candidates) - 元に戻したブロック
     std::cout << "\n--- 地面候補点の可視化開始 ---" << std::endl;
@@ -297,6 +310,63 @@ int main(int argc, char* argv[]) {
         std::cout << "グローバル地面平面のフィッティング成功。" << std::endl;
         if (plane_coefficients->values.empty()) {
              std::cout << "注意: 平面フィッティングは成功と報告されましたが、係数が空です。" << std::endl;
+        } else {
+            // Visualize the main ground cluster and the fitted plane
+            std::cout << "\n--- 地面平面と主クラスタの可視化開始 ---" << std::endl;
+            processor.visualizePlane(main_ground_cluster, plane_coefficients);
+            std::cout << "--- 地面平面と主クラスタの可視化終了 ---" << std::endl;
+
+            // Rotate the main ground cluster to be horizontal
+            if (main_ground_cluster && !main_ground_cluster->points.empty() && plane_coefficients && !plane_coefficients->values.empty()) {
+                std::cout << "\n--- 主クラスタの水平回転処理開始 ---" << std::endl;
+                pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                Eigen::Matrix4f rotation_matrix; // To store the transformation matrix
+                if (processor.rotateCloudToHorizontal(main_ground_cluster, plane_coefficients, rotated_cloud, rotation_matrix)) {
+                    std::cout << "主クラスタの水平回転成功。回転後の点数: " << rotated_cloud->size() << std::endl;
+
+                    // Translate the rotated cloud to Z=0
+                    if (rotated_cloud && !rotated_cloud->points.empty()) {
+                        std::cout << "\n--- 水平化済みクラスタのZ=0への平行移動処理開始 ---" << std::endl;
+                        pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                        Eigen::Matrix4f translation_matrix;
+                        if (processor.translateCloudToZZero(rotated_cloud, translated_cloud, translation_matrix)) {
+                            std::cout << "水平化済みクラスタのZ=0への平行移動成功。点数: " << translated_cloud->size() << std::endl;
+                            // processor.visualizeCloud(translated_cloud, "Translated Cloud (Z=0)"); // Commented out
+
+                            // Now, transform the non-horizontal points using the same matrices
+                            if (non_horizontal_cloud && !non_horizontal_cloud->points.empty()) {
+                                std::cout << "\n--- 非水平要素の変換処理開始 ---" << std::endl;
+                                pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                                // Apply the rotation
+                                pcl::transformPointCloud(*non_horizontal_cloud, *non_horizontal_rotated_cloud, rotation_matrix);
+
+                                // Apply the translation (non_horizontal_transformed_cloud was declared earlier)
+                                pcl::transformPointCloud(*non_horizontal_rotated_cloud, *non_horizontal_transformed_cloud, translation_matrix);
+
+                                std::cout << "非水平要素の変換成功。変換後の点数: " << non_horizontal_transformed_cloud->size() << std::endl;
+                                // Visualization of non_horizontal_transformed_cloud will be in the next step
+                                std::cout << "--- 非水平要素の変換処理終了 ---" << std::endl;
+
+                                // Call the new combined visualization
+                                processor.visualizeCombinedClouds(translated_cloud, non_horizontal_transformed_cloud, "Combined Transformed Clouds");
+
+                            } else {
+                                std::cout << "情報: 非水平要素の点群が空のため、変換をスキップします。" << std::endl;
+                                // Still visualize the translated ground if non-horizontal is empty
+                                processor.visualizeCombinedClouds(translated_cloud, non_horizontal_transformed_cloud, "Combined Transformed Clouds (Ground Only)");
+                            }
+                        } else {
+                            std::cout << "警告: 水平化済みクラスタのZ=0への平行移動に失敗しました。" << std::endl;
+                        }
+                        std::cout << "--- 水平化済みクラスタのZ=0への平行移動処理終了 ---" << std::endl;
+                    } else {
+                        std::cout << "警告: 回転後クラスタが空のため、Z=0への平行移動をスキップします。" << std::endl;
+                    }
+                } else {
+                    std::cout << "警告: 主クラスタの水平回転に失敗しました。" << std::endl;
+                }
+                std::cout << "--- 主クラスタの水平回転処理終了 ---" << std::endl;
+            }
         }
     } else {
         std::cout << "情報: グローバル地面平面のフィッティングに失敗、または平面が見つかりませんでした。" << std::endl;
