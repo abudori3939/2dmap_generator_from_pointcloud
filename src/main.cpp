@@ -97,21 +97,27 @@ int main(int argc, char* argv[]) {
     std::cout << "\n--- 点群処理開始 ---" << std::endl;
     proc::PointCloudProcessor processor;
 
-    // Declare point clouds that will be used across multiple scopes here
-    pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointIndices::Ptr ground_candidate_indices(new pcl::PointIndices());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients());
-    pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices());
+    // proc::PointCloudProcessor processor; // Assumed to be declared before this block
 
-    // MOVED/NEW DECLARATIONS FOR SCOPE FIX:
-    pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Already moved in a previous step by the prompt, but ensure it's here
-    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_downsampled_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Already moved
-    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Already moved
+   // Point clouds used throughout the processing pipeline
+   pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+   pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>());
+   pcl::PointIndices::Ptr ground_candidate_indices(new pcl::PointIndices);
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Holds points not initially classified as ground candidates
+   pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>());
+
+   pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients());
+   pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices());
+
+   // Clouds related to ground transformation
+   pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Ground after rotation
+   pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Ground after rotation and translation to Z=0
+
+   // Clouds related to non-horizontal (obstacle) point transformation and filtering
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Non-horizontal points after rotation
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Non-horizontal points after rotation and translation
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_downsampled_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // After downsampling non_horizontal_transformed_cloud
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // After height-filtering non_horizontal_downsampled_cloud
 
     //   3.5.1 法線推定 (Normal Estimation)
     // pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>); // Moved up
@@ -352,7 +358,7 @@ int main(int argc, char* argv[]) {
                             // Now, transform the non-horizontal points using the same matrices
                             if (non_horizontal_cloud && !non_horizontal_cloud->points.empty()) {
                                 std::cout << "\n--- 非水平要素の変換処理開始 ---" << std::endl;
-                                pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                                // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
                                 // Apply the rotation
                                 pcl::transformPointCloud(*non_horizontal_cloud, *non_horizontal_rotated_cloud, rotation_matrix);
 
