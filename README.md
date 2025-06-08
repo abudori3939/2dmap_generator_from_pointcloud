@@ -1,4 +1,4 @@
-# 3D点群からの2D占有格子地図（Occupancy Grid Map）生成ツール
+# 2D OccupancyGridMap generator from PointCloud
 
 このプロジェクトは、3D点群データから2Dの占有格子地図を生成します。
 
