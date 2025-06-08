@@ -8,4 +8,8 @@ block_size: 10.0 # 並列処理で分割するブロックのサイズ [m] (フ�
 min_cluster_size: 50    # クラスタを構成する最小点数
 max_cluster_size: 25000000 # クラスタを構成する最大点数
 
+# Map processing parameters
+free_space_kernel_size: 3
+obstacle_space_kernel_size: 3
+
 preview_map_on_exit: false # trueにすると、可能であれば終了前に地図をプレビュー表示 (現在は未実装)

@@ -22,6 +22,10 @@ struct Config {
 
     bool preview_map_on_exit = false; // 地図プレビュー表示フラグ
 
+    // Map processing parameters
+    int free_space_kernel_size = 3;    // フリースペース充填カーネルサイズ
+    int obstacle_space_kernel_size = 3; // 障害物スペース充填カーネルサイズ
+
     // 今後、他のパラメータもここに追加
 };
 
