@@ -19,7 +19,7 @@
 // PCL Visualization
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/common/io.h> // For copyPointCloud
-// #include <pcl/search/kdtree.h> // No longer directly needed in main for this coloring
+#include <pcl/search/kdtree.h> // For KdTree used in visualization coloring (restored)
 
 // Helper function to get file extension (lowercase)
 std::string getFileExtension(const std::string& filepath) {
@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "地面候補点の抽出成功。候補点数: " << ground_candidates->size() << std::endl;
 
-    //   3.5.3 地面候補点の可視化 (Visualization of Ground Candidates)
+    //   3.5.3 地面候補点の可視化 (Visualization of Ground Candidates) - 元に戻したブロック
     std::cout << "\n--- 地面候補点の可視化開始 ---" << std::endl;
     if (!cloud->points.empty()) {
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
@@ -124,29 +124,34 @@ int main(int argc, char* argv[]) {
         }
 
         if (ground_candidates && !ground_candidates->points.empty()) {
-            std::cout << "地面候補点の色付け処理（全探索）を開始します..." << std::endl;
+            std::cout << "地面候補点の色付け処理（KdTree）を開始します..." << std::endl;
+            // KdTreeを使って元の点群内の地面候補点に対応する点を見つける
+            pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree_rgb(new pcl::search::KdTree<pcl::PointXYZRGB>());
+            tree_rgb->setInputCloud(colored_cloud); // tree_rgb に colored_cloud を設定
+
             int colored_count = 0;
-            const float coord_tolerance = 1e-5f; // 座標比較のための非常に小さな許容誤差
-
             for (const auto& ground_point : ground_candidates->points) {
-                for (auto& rgb_point : colored_cloud->points) {
-                    // X, Y, Z座標を比較
-                    if (std::abs(rgb_point.x - ground_point.x) < coord_tolerance &&
-                        std::abs(rgb_point.y - ground_point.y) < coord_tolerance &&
-                        std::abs(rgb_point.z - ground_point.z) < coord_tolerance) {
+                pcl::PointXYZRGB search_point_rgb; // KdTree検索用のPointXYZRGB点を作成
+                search_point_rgb.x = ground_point.x;
+                search_point_rgb.y = ground_point.y;
+                search_point_rgb.z = ground_point.z;
 
-                        rgb_point.r = r_ground;
-                        rgb_point.g = g_ground;
-                        rgb_point.b = b_ground;
+                std::vector<int> point_idx_nkns(1); // 見つかった点のインデックスを格納するベクター
+                std::vector<float> point_squared_distance(1); // 見つかった点との距離の二乗を格納するベクター
+
+                if (tree_rgb->nearestKSearch(search_point_rgb, 1, point_idx_nkns, point_squared_distance) > 0) {
+                    if (point_squared_distance[0] < 0.00001f) { // 小さな許容誤差 (1e-5f)
+                        colored_cloud->points[point_idx_nkns[0]].r = r_ground;
+                        colored_cloud->points[point_idx_nkns[0]].g = g_ground;
+                        colored_cloud->points[point_idx_nkns[0]].b = b_ground;
                         colored_count++;
-                        break;
                     }
                 }
             }
-            std::cout << "地面候補点の色付け処理（全探索）完了。 " << colored_count << " 点が赤色にマークされました。" << std::endl;
+            std::cout << "地面候補点の色付け処理（KdTree）完了。 " << colored_count << " 点が赤色にマークされました。" << std::endl;
             if (static_cast<size_t>(colored_count) != ground_candidates->points.size()) {
                 std::cout << "警告: 全ての地面候補点 (" << ground_candidates->points.size()
-                          << "点) が色付けされたわけではありません。許容誤差またはロジックを確認してください。" << std::endl;
+                          << "点) がKdTreeで色付けされたわけではありません。許容誤差またはロジックを確認してください。" << std::endl;
             }
         } else {
             std::cout << "地面候補点がないため、色付け処理はスキップされました（全点が緑色）。" << std::endl;
@@ -196,6 +201,90 @@ int main(int argc, char* argv[]) {
             std::cout << "注意: 地面候補点はありましたが、条件に合う主地面クラスタは見つかりませんでした。" << std::endl;
         }
     }
+
+    // ---- ここから新しい視覚化コード (主地面クラスタの視覚化) ----
+    std::cout << "\n--- 主地面クラスタの視覚化開始 ---" << std::endl;
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cluster_viz_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+
+    uint8_t r_main_cluster = 255, g_main_cluster = 0, b_main_cluster = 0; // 赤色 (主地面クラスタ)
+    uint8_t r_other_candidates = 0, g_other_candidates = 255, b_other_candidates = 0; // 緑色 (その他の地面候補)
+
+    if (ground_candidates && !ground_candidates->points.empty()) {
+        // まず、全ての地面候補点を緑色で cluster_viz_cloud にコピー
+        // (この時点では main_ground_cluster の点は ground_candidates にも含まれているので、一旦全て緑になる)
+        for (const auto& candidate_point : ground_candidates->points) {
+            pcl::PointXYZRGB point_rgb;
+            point_rgb.x = candidate_point.x;
+            point_rgb.y = candidate_point.y;
+            point_rgb.z = candidate_point.z;
+            point_rgb.r = r_other_candidates;
+            point_rgb.g = g_other_candidates;
+            point_rgb.b = b_other_candidates;
+            cluster_viz_cloud->points.push_back(point_rgb);
+        }
+        cluster_viz_cloud->width = cluster_viz_cloud->points.size();
+        cluster_viz_cloud->height = 1;
+        cluster_viz_cloud->is_dense = true;
+
+
+        // 次に、主地面クラスタの点を赤色にマークする (KdTreeを使用)
+        if (main_ground_cluster && !main_ground_cluster->points.empty()) {
+            // cluster_viz_cloud には ground_candidates がコピーされているので、
+            // main_ground_cluster の点と一致するものを cluster_viz_cloud の中で見つけて赤くする
+            pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree_cluster_viz(new pcl::search::KdTree<pcl::PointXYZRGB>());
+            tree_cluster_viz->setInputCloud(cluster_viz_cloud);
+
+            int re_colored_count = 0;
+            for (const auto& main_cluster_point : main_ground_cluster->points) {
+                pcl::PointXYZRGB search_point_rgb;
+                search_point_rgb.x = main_cluster_point.x;
+                search_point_rgb.y = main_cluster_point.y;
+                search_point_rgb.z = main_cluster_point.z;
+
+                std::vector<int> point_idx_nkns(1);
+                std::vector<float> point_squared_distance(1);
+
+                if (tree_cluster_viz->nearestKSearch(search_point_rgb, 1, point_idx_nkns, point_squared_distance) > 0) {
+                    if (point_squared_distance[0] < 0.00001f) { // 小さな許容誤差
+                        cluster_viz_cloud->points[point_idx_nkns[0]].r = r_main_cluster;
+                        cluster_viz_cloud->points[point_idx_nkns[0]].g = g_main_cluster;
+                        cluster_viz_cloud->points[point_idx_nkns[0]].b = b_main_cluster;
+                        re_colored_count++;
+                    }
+                }
+            }
+            std::cout << "主地面クラスタの点 " << re_colored_count << " 点を赤色にマークしました。" << std::endl;
+        } else {
+            std::cout << "主地面クラスタが空のため、赤色マーク処理はスキップ（全地面候補点が緑色）。" << std::endl;
+        }
+    } else {
+        std::cout << "表示対象の地面候補点がありません。視覚化をスキップします。" << std::endl;
+    }
+
+    if (cluster_viz_cloud && !cluster_viz_cloud->points.empty()) {
+        try {
+            pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("Ground Cluster Viewer"));
+            viewer->setBackgroundColor(0.1, 0.1, 0.1);
+            pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(cluster_viz_cloud);
+            viewer->addPointCloud<pcl::PointXYZRGB>(cluster_viz_cloud, rgb, "ground_clusters_viz");
+            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "ground_clusters_viz");
+            viewer->initCameraParameters();
+            // viewer->addCoordinateSystem(1.0);
+
+            std::cout << "PCLViewer（地面クラスタ）を表示します。ウィンドウを閉じて続行してください..." << std::endl;
+            while (!viewer->wasStopped()) {
+                viewer->spinOnce(100);
+            }
+            viewer->close();
+            std::cout << "PCLViewer（地面クラスタ）を閉じました。" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "PCLViewer（地面クラスタ）の初期化または実行中に例外が発生しました: " << e.what() << std::endl;
+            std::cerr << "ヘッドレス環境など、表示がサポートされていない可能性があります。" << std::endl;
+        }
+    } else {
+        std::cout << "表示する点群データがないため、PCLViewer（地面クラスタ）の起動をスキップしました。" << std::endl;
+    }
+    // ---- ここまで新しい視覚化コード ----
 
     //   3.5.5 グローバル地面平面のフィッティング (Global Ground Plane Fitting)
     pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients());
