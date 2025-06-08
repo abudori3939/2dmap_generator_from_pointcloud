@@ -19,7 +19,7 @@
 // PCL Visualization
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/common/io.h> // For copyPointCloud
-#include <pcl/search/kdtree.h> // For KdTree used in visualization coloring
+// #include <pcl/search/kdtree.h> // No longer directly needed in main for this coloring
 
 // Helper function to get file extension (lowercase)
 std::string getFileExtension(const std::string& filepath) {
@@ -124,24 +124,30 @@ int main(int argc, char* argv[]) {
         }
 
         if (ground_candidates && !ground_candidates->points.empty()) {
-            pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree_rgb(new pcl::search::KdTree<pcl::PointXYZRGB>());
-            tree_rgb->setInputCloud(colored_cloud);
+            std::cout << "地面候補点の色付け処理（全探索）を開始します..." << std::endl;
+            int colored_count = 0;
+            const float coord_tolerance = 1e-5f; // 座標比較のための非常に小さな許容誤差
+
             for (const auto& ground_point : ground_candidates->points) {
-                pcl::PointXYZRGB search_point_rgb;
-                search_point_rgb.x = ground_point.x;
-                search_point_rgb.y = ground_point.y;
-                search_point_rgb.z = ground_point.z;
-                std::vector<int> point_idx_nkns(1);
-                std::vector<float> point_squared_distance(1);
-                if (tree_rgb->nearestKSearch(search_point_rgb, 1, point_idx_nkns, point_squared_distance) > 0) {
-                    if (point_squared_distance[0] < 0.00001f) {
-                        colored_cloud->points[point_idx_nkns[0]].r = r_ground;
-                        colored_cloud->points[point_idx_nkns[0]].g = g_ground;
-                        colored_cloud->points[point_idx_nkns[0]].b = b_ground;
+                for (auto& rgb_point : colored_cloud->points) {
+                    // X, Y, Z座標を比較
+                    if (std::abs(rgb_point.x - ground_point.x) < coord_tolerance &&
+                        std::abs(rgb_point.y - ground_point.y) < coord_tolerance &&
+                        std::abs(rgb_point.z - ground_point.z) < coord_tolerance) {
+
+                        rgb_point.r = r_ground;
+                        rgb_point.g = g_ground;
+                        rgb_point.b = b_ground;
+                        colored_count++;
+                        break;
                     }
                 }
             }
-            std::cout << "地面候補点の色付け処理完了。" << std::endl;
+            std::cout << "地面候補点の色付け処理（全探索）完了。 " << colored_count << " 点が赤色にマークされました。" << std::endl;
+            if (static_cast<size_t>(colored_count) != ground_candidates->points.size()) {
+                std::cout << "警告: 全ての地面候補点 (" << ground_candidates->points.size()
+                          << "点) が色付けされたわけではありません。許容誤差またはロジックを確認してください。" << std::endl;
+            }
         } else {
             std::cout << "地面候補点がないため、色付け処理はスキップされました（全点が緑色）。" << std::endl;
         }
