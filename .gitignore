@@ -3,12 +3,6 @@ build/
 **/build/
 **/**/build/
 
-# PointCloud directory
-data/
-
-# Output map directory
-output/
-
 # Compiled Object files
 *.o
 *.slo
@@ -66,3 +60,9 @@ docs/latex/
 
 # Other
 *.log
+
+# Ignore data directory containing test point clouds
+/data/
+
+# Ignore output directory containing generated maps
+/output/

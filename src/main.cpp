@@ -14,6 +14,7 @@
 #include "config_loader.h"
 #include "map_parameters.h"
 #include "map_io.h"
+#include "point_cloud_processor.h" // 新しいヘッダ
 
 // Helper function to get file extension (lowercase)
 std::string getFileExtension(const std::string& filepath) {
@@ -96,6 +97,72 @@ int main(int argc, char* argv[]) {
 
     std::cout << "点群ファイルから " << cloud->width * cloud->height << " 点のデータを読み込みました。" << std::endl;
 
+    // 3.5 点群処理 (Point Cloud Processing) - 法線推定など
+    std::cout << "\n--- 点群処理開始 ---" << std::endl;
+    proc::PointCloudProcessor processor;
+    pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+
+    if (!processor.estimateNormals(cloud, static_cast<float>(app_config.normal_estimation_radius), normals)) {
+        std::cerr << "エラー: 法線推定に失敗しました。プログラムを終了します。" << std::endl;
+        return 1;
+    }
+    // 現時点では法線は使用されていませんが、推定は行われました。
+    // 将来のステップで地面除去などに使用します。
+    std::cout << "法線推定が正常に完了しました。法線数: " << normals->size() << std::endl;
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>());
+    if (!processor.extractGroundCandidates(cloud, normals, static_cast<float>(app_config.ground_normal_z_threshold), ground_candidates)) {
+        std::cerr << "エラー: 地面候補点の抽出に失敗しました。プログラムを終了します。" << std::endl;
+        return 1;
+    }
+    std::cout << "地面候補点の抽出成功。候補点数: " << ground_candidates->size() << std::endl;
+    if (ground_candidates->empty()) {
+        std::cout << "注意: 地面候補点が見つかりませんでした。パラメータまたは入力データを確認してください。" << std::endl;
+    }
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>());
+    // クラスタリングのパラメータを設定 (これらの値は設定ファイルからも読み込めるようにすると良い)
+    // app_config から読み込むか、適切なデフォルト値を設定
+    float cluster_tolerance = 2.0f * static_cast<float>(app_config.map_resolution); // 例: 解像度の2倍
+    int min_cluster_size = 50;  // 例: 最小50点
+    int max_cluster_size = 25000; // 例: 最大25000点
+
+    if (!processor.extractMainGroundCluster(ground_candidates, cluster_tolerance, min_cluster_size, max_cluster_size, main_ground_cluster)) {
+        std::cerr << "エラー: 主地面クラスタの特定に失敗しました。プログラムを終了します。" << std::endl;
+        return 1;
+    }
+    std::cout << "主地面クラスタの特定成功。クラスタ点数: " << main_ground_cluster->size() << std::endl;
+    if (main_ground_cluster->empty()) {
+        if (ground_candidates->empty()) {
+            std::cout << "情報: 地面候補点がなかったため、主地面クラスタもありません。" << std::endl;
+        } else {
+            std::cout << "注意: 地面候補点はありましたが、条件に合う主地面クラスタは見つかりませんでした。" << std::endl;
+        }
+    } else {
+        std::cerr << "エラー: 主地面クラスタの特定に失敗しました。プログラムを終了します。" << std::endl;
+        return 1;
+    }
+
+    pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients());
+    pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices());
+
+    // 平面フィッティングのパラメータ (設定ファイルから読み込めるようにすると良い)
+    float plane_distance_threshold = 0.02f; // 例: 2cm (app_config.map_resolution * 0.4 なども検討可)
+
+    if (processor.fitGlobalGroundPlane(main_ground_cluster, plane_distance_threshold, plane_coefficients, plane_inliers)) {
+        std::cout << "グローバル地面平面のフィッティング成功。" << std::endl;
+        // 平面係数とインライア数は fitGlobalGroundPlane 内で詳細に出力される
+        if (plane_coefficients->values.empty()) { // 追加の堅牢性チェック
+             std::cout << "注意: 平面フィッティングは成功と報告されましたが、係数が空です。" << std::endl;
+        }
+    } else {
+        std::cout << "情報: グローバル地面平面のフィッティングに失敗、または平面が見つかりませんでした。" << std::endl;
+        // 地面平面が見つからない場合、この後の処理で問題が起きる可能性がある。
+        // 例えば、ロボットの高さに基づいて点をフィルタリングする場合など。
+        // ここでは、警告を出しつつ処理を続行する。必要に応じて return 1; で終了させる。
+    }
+    // plane_coefficients と plane_inliers は次のステップ (占有グリッド生成) で使用されます。
+    std::cout << "--- 点群処理終了 ---\n" << std::endl;
 
     // 4. 地図パラメータ計算 (Map Parameter Calculation)
     map_params_util::MapParameters map_params;
@@ -145,6 +212,5 @@ int main(int argc, char* argv[]) {
 
     std::cout << "地図が " << output_dir << " に正常に出力されました。" << std::endl;
     std::cout << "プログラムは正常に終了しました。" << std::endl;
-
     return 0;
 }
