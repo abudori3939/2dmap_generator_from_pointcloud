@@ -1,5 +1,9 @@
-map_resolution: 0.05
-robot_height: 0.5
-normal_estimation_radius: 0.1
-ground_normal_z_threshold: 0.9
-block_size: 10.0
+map_resolution: 0.1
+robot_height: 1.5
+normal_estimation_radius: 1.0
+ground_normal_z_threshold: 0.7
+block_size: 10.0 # 並列処理で分割するブロックのサイズ [m] (フェーズ2)
+
+# クラスタリングパラメータ (EuclideanClusterExtraction用)
+min_cluster_size: 50    # クラスタを構成する最小点数
+max_cluster_size: 25000000 # クラスタを構成する最大点数
