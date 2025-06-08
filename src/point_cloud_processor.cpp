@@ -85,7 +85,8 @@ bool PointCloudProcessor::extractGroundCandidates(
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
     const pcl::PointCloud<pcl::Normal>::ConstPtr& normals,
     float ground_normal_z_thresh,
-    pcl::PointCloud<pcl::PointXYZ>::Ptr& ground_candidates_cloud) {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr& ground_candidates_cloud,
+    pcl::PointIndices::Ptr& ground_candidate_indices) { // Added ground_candidate_indices
 
     if (!input_cloud || input_cloud->points.empty()) {
         std::cerr << "エラー (GroundCandidates): 入力点群が空または無効です。" << std::endl;
@@ -104,7 +105,12 @@ bool PointCloudProcessor::extractGroundCandidates(
         std::cerr << "エラー (GroundCandidates): 地面候補点群ポインタが無効 (null) です。" << std::endl;
         return false;
     }
+    if (!ground_candidate_indices) {
+        std::cerr << "エラー (GroundCandidates): 地面候補インデックスポインタが無効 (null) です。" << std::endl;
+        return false;
+    }
     ground_candidates_cloud->clear();
+    ground_candidate_indices->indices.clear(); // Clear indices
 
     if (ground_normal_z_thresh < 0.0f || ground_normal_z_thresh > 1.0f) {
          std::cerr << "警告 (GroundCandidates): ground_normal_z_thresh (" << ground_normal_z_thresh
@@ -113,29 +119,51 @@ bool PointCloudProcessor::extractGroundCandidates(
 
     std::cout << "地面候補点の抽出を開始します... Z法線閾値 (絶対値比較): " << ground_normal_z_thresh << std::endl;
 
-    ground_candidates_cloud->points.reserve(input_cloud->points.size());
+    // ground_candidates_cloud->points.reserve(input_cloud->points.size()); // Not needed if using ExtractIndices
+    ground_candidate_indices->indices.reserve(input_cloud->points.size());
+
 
     for (size_t i = 0; i < input_cloud->points.size(); ++i) {
-        const auto& point = input_cloud->points[i];
+        // const auto& point = input_cloud->points[i]; // Not needed directly for indices
         const auto& normal = normals->points[i];
 
         if (!pcl::isFinite(normal)) {
             continue;
         }
         if (std::abs(normal.normal_z) > ground_normal_z_thresh) {
-            ground_candidates_cloud->points.push_back(point);
+            // ground_candidates_cloud->points.push_back(point); // Old way
+            ground_candidate_indices->indices.push_back(static_cast<int>(i)); // New way: store index
         }
     }
 
-    ground_candidates_cloud->width = ground_candidates_cloud->points.size();
-    ground_candidates_cloud->height = 1;
-    ground_candidates_cloud->is_dense = true;
+    std::cout << "地面候補インデックスの収集完了。収集されたインデックス数: " << ground_candidate_indices->indices.size() << std::endl;
 
-    std::cout << "地面候補点の抽出が完了しました。抽出された点数: " << ground_candidates_cloud->points.size() << std::endl;
+    // Extract the points using the collected indices
+    if (!ground_candidate_indices->indices.empty()) {
+        pcl::ExtractIndices<pcl::PointXYZ> extract;
+        extract.setInputCloud(input_cloud);
+        extract.setIndices(ground_candidate_indices);
+        extract.setNegative(false); // Extract the points specified by the indices
+        extract.filter(*ground_candidates_cloud);
+        std::cout << "地面候補点の抽出 (ExtractIndices) が完了しました。抽出された点数: " << ground_candidates_cloud->points.size() << std::endl;
+    } else {
+        std::cout << "警告 (GroundCandidates): 地面候補インデックスが空のため、候補点群も空になります。" << std::endl;
+        // Ensure cloud is empty and valid
+        ground_candidates_cloud->points.clear();
+        ground_candidates_cloud->width = 0;
+        ground_candidates_cloud->height = 1;
+        ground_candidates_cloud->is_dense = true;
+    }
 
+
+    if (ground_candidates_cloud->points.empty() && !ground_candidate_indices->indices.empty()){
+         std::cerr << "エラー (GroundCandidates): インデックスはあったが、点の抽出に失敗しました。" << std::endl;
+         return false;
+    }
     if (ground_candidates_cloud->points.empty()){
         std::cout << "警告 (GroundCandidates): 地面候補点が抽出されませんでした。" << std::endl;
     }
+
     return true;
 }
 
@@ -547,6 +575,100 @@ void PointCloudProcessor::visualizeCloud(
     // Example camera position - adjust as needed for better view, ensuring origin and plane are visible
     viewer->setCameraPosition(0, -3, 3, 0, 0, 0); // Looking towards origin from -Y, Z slightly up
 
+
+    std::cout << "Starting visualization loop for window '" << window_title << "'. Close the viewer window to continue." << std::endl;
+    while (!viewer->wasStopped()) {
+        viewer->spinOnce(100);
+    }
+    std::cout << "Visualization stopped for window '" << window_title << "'." << std::endl;
+}
+
+bool PointCloudProcessor::extractNonHorizontalPoints(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& original_cloud,
+    const pcl::PointIndices::ConstPtr& ground_candidate_indices,
+    pcl::PointCloud<pcl::PointXYZ>::Ptr& non_horizontal_cloud) {
+
+    if (!original_cloud) {
+        std::cerr << "ExtractNonHorizontal: Input original_cloud is null." << std::endl;
+        return false;
+    }
+    if (!ground_candidate_indices) {
+        std::cerr << "ExtractNonHorizontal: Input ground_candidate_indices is null." << std::endl;
+        return false;
+    }
+    if (!non_horizontal_cloud) {
+        std::cerr << "ExtractNonHorizontal: Output non_horizontal_cloud pointer is null." << std::endl;
+        return false;
+    }
+    non_horizontal_cloud->clear();
+
+    if (original_cloud->points.empty()) {
+        std::cout << "ExtractNonHorizontal: Input original_cloud is empty. Output will be empty." << std::endl;
+        return true; // Technically successful, nothing to do
+    }
+
+    std::cout << "非水平要素の抽出を開始します... 入力点数: " << original_cloud->size()
+              << ", 地面候補インデックス数: " << ground_candidate_indices->indices.size() << std::endl;
+
+    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    extract.setInputCloud(original_cloud);
+    extract.setIndices(ground_candidate_indices);
+    extract.setNegative(true); // Extract points NOT in ground_candidate_indices
+
+    try {
+        extract.filter(*non_horizontal_cloud);
+    } catch (const std::exception& e) {
+        std::cerr << "エラー (ExtractNonHorizontal): 非水平要素の抽出中に例外が発生しました: " << e.what() << std::endl;
+        return false;
+    }
+
+    std::cout << "非水平要素の抽出が完了しました。抽出された点数: " << non_horizontal_cloud->points.size() << std::endl;
+    return true;
+}
+
+void PointCloudProcessor::visualizeCombinedClouds(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& ground_cloud,
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& nonground_cloud,
+    const std::string& window_title) {
+
+    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer(window_title));
+    viewer->setBackgroundColor(0.1, 0.1, 0.15); // Slightly different background
+
+    // Add ground cloud (green)
+    if (ground_cloud && !ground_cloud->points.empty()) {
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> ground_color(ground_cloud, 0, 255, 0); // Green
+        viewer->addPointCloud<pcl::PointXYZ>(ground_cloud, ground_color, "transformed_ground_cloud");
+        viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "transformed_ground_cloud");
+        std::cout << "Visualizing transformed ground cloud with " << ground_cloud->size() << " points." << std::endl;
+    } else {
+        std::cout << "Transformed ground cloud is empty or null, not visualizing." << std::endl;
+    }
+
+    // Add non-ground cloud (red)
+    if (nonground_cloud && !nonground_cloud->points.empty()) {
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> nonground_color(nonground_cloud, 255, 0, 0); // Red
+        viewer->addPointCloud<pcl::PointXYZ>(nonground_cloud, nonground_color, "transformed_nonground_cloud");
+        viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "transformed_nonground_cloud");
+        std::cout << "Visualizing transformed non-ground cloud with " << nonground_cloud->size() << " points." << std::endl;
+    } else {
+        std::cout << "Transformed non-ground cloud is empty or null, not visualizing." << std::endl;
+    }
+
+    // Add the XY plane at Z=0 (blue, semi-transparent)
+    pcl::ModelCoefficients::Ptr xy_plane(new pcl::ModelCoefficients());
+    xy_plane->values.resize(4);
+    xy_plane->values[0] = 0; // X component of normal
+    xy_plane->values[1] = 0; // Y component of normal
+    xy_plane->values[2] = 1; // Z component of normal (points upwards)
+    xy_plane->values[3] = 0; // d (distance from origin, so Z=0)
+    viewer->addPlane(*xy_plane, "xy_plane_z0");
+    viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 1.0, "xy_plane_z0"); // Blue
+    viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_OPACITY, 0.5, "xy_plane_z0");
+
+    // Add coordinate system
+    viewer->addCoordinateSystem(1.0);
+    viewer->initCameraParameters();
+    viewer->setCameraPosition(0, -4, 2, 0, 0, 0); // Adjusted for potentially larger combined view
 
     std::cout << "Starting visualization loop for window '" << window_title << "'. Close the viewer window to continue." << std::endl;
     while (!viewer->wasStopped()) {

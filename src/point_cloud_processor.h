@@ -33,7 +33,8 @@ public:
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
         const pcl::PointCloud<pcl::Normal>::ConstPtr& normals,
         float ground_normal_z_thresh,
-        pcl::PointCloud<pcl::PointXYZ>::Ptr& ground_candidates_cloud
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& ground_candidates_cloud,
+        pcl::PointIndices::Ptr& ground_candidate_indices // Added output for indices
     );
 
     bool extractMainGroundCluster(
@@ -81,6 +82,18 @@ public:
 
     void visualizeCloud(
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+        const std::string& window_title
+    );
+
+    bool extractNonHorizontalPoints(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& original_cloud,
+        const pcl::PointIndices::ConstPtr& ground_candidate_indices,
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& non_horizontal_cloud
+    );
+
+    void visualizeCombinedClouds(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& ground_cloud,
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& nonground_cloud,
         const std::string& window_title
     );
 
