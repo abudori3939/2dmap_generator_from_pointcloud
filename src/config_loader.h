@@ -4,7 +4,7 @@
 #include <string>
 #include "yaml-cpp/yaml.h" // YAML::Node is part of the function signature / implementation details
 
-namespace map_config { // Changed namespace to map_config for clarity
+namespace map_config {
 
 /**
  * @brief アプリケーションの設定値を保持する構造体。
@@ -15,6 +15,10 @@ struct Config {
     double normal_estimation_radius = 0.1; // 法線推定時の近傍探索半径 [m]
     double ground_normal_z_threshold = 0.9; // 地面と判定するための法線Z成分の閾値
     double block_size = 10.0; // 並列処理で分割するブロックのサイズ [m]
+
+    // クラスタリングパラメータ
+    int min_cluster_size = 50;    // クラスタを構成する最小点数
+    int max_cluster_size = 25000; // クラスタを構成する最大点数
 
     // 今後、他のパラメータもここに追加
 };

@@ -61,6 +61,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  法線推定半径: " << app_config.normal_estimation_radius << " [m]" << std::endl;
     std::cout << "  地面法線Z閾値: " << app_config.ground_normal_z_threshold << std::endl;
     std::cout << "  ブロックサイズ: " << app_config.block_size << " [m]" << std::endl;
+    std::cout << "  最小クラスタ点数 (min_cluster_size): " << app_config.min_cluster_size << std::endl;
+    std::cout << "  最大クラスタ点数 (max_cluster_size): " << app_config.max_cluster_size << std::endl;
 
     // 3. 点群読み込み (Point Cloud Loading)
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
@@ -185,11 +187,11 @@ int main(int argc, char* argv[]) {
 
     //   3.5.4 主地面クラスタの特定 (Main Ground Cluster Extraction)
     pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>());
-    float cluster_tolerance = 2.0f * static_cast<float>(app_config.map_resolution);
-    int min_cluster_size = 50;
-    int max_cluster_size = 25000;
+    // クラスタリングパラメータをapp_configから使用
+    float cluster_tolerance = 2.0f * static_cast<float>(app_config.map_resolution); // 許容距離は解像度に応じて設定
+    // min_cluster_size と max_cluster_size は app_config から直接使用
 
-    if (!processor.extractMainGroundCluster(ground_candidates, cluster_tolerance, min_cluster_size, max_cluster_size, main_ground_cluster)) {
+    if (!processor.extractMainGroundCluster(ground_candidates, cluster_tolerance, app_config.min_cluster_size, app_config.max_cluster_size, main_ground_cluster)) {
         std::cerr << "エラー: 主地面クラスタの特定に失敗しました。プログラムを終了します。" << std::endl;
         return 1;
     }
