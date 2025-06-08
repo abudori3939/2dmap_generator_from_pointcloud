@@ -20,6 +20,11 @@ struct Config {
     int min_cluster_size = 50;    // クラスタを構成する最小点数
     int max_cluster_size = 25000; // クラスタを構成する最大点数
 
+    // Outlier Removal Parameters
+    bool outlier_removal_enable = true;
+    int outlier_removal_mean_k = 50;
+    double outlier_removal_std_dev_mul_thresh = 1.0;
+
     bool preview_map_on_exit = false; // 地図プレビュー表示フラグ
 
     // Map processing parameters

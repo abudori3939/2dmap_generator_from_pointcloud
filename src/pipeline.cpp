@@ -304,7 +304,16 @@ static bool transformAllGroundCandidates(PipelineData& data) {
 static bool processNonHorizontalCloud(PipelineData& data, proc::PointCloudProcessor& processor) {
     if (data.non_horizontal_transformed_cloud && !data.non_horizontal_transformed_cloud->points.empty()) {
         float leaf_size = static_cast<float>(data.app_config.map_resolution);
-        if (!processor.downsampleCloud(data.non_horizontal_transformed_cloud, leaf_size, leaf_size, leaf_size, data.non_horizontal_downsampled_cloud)) {
+        if (!processor.downsampleCloud(
+                data.non_horizontal_transformed_cloud,
+                leaf_size,
+                leaf_size,
+                leaf_size,
+                data.app_config.outlier_removal_enable,      // New argument
+                data.app_config.outlier_removal_mean_k,      // New argument
+                static_cast<float>(data.app_config.outlier_removal_std_dev_mul_thresh), // New argument, ensure correct type
+                data.non_horizontal_downsampled_cloud
+            )) {
             std::cerr << "警告: 非水平要素のダウンサンプリングに失敗しました。" << std::endl;
             // Fallback: use non-downsampled, or clear if that's safer
             data.non_horizontal_downsampled_cloud = data.non_horizontal_transformed_cloud;

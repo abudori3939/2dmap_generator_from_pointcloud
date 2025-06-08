@@ -65,6 +65,32 @@ bool loadConfig(const std::string& filepath, Config& config) {
         load_int_param("free_space_kernel_size", config.free_space_kernel_size, config.free_space_kernel_size);
         load_int_param("obstacle_space_kernel_size", config.obstacle_space_kernel_size, config.obstacle_space_kernel_size);
 
+        // Load Outlier Removal Parameters
+        load_int_param("outlier_removal_mean_k", config.outlier_removal_mean_k, config.outlier_removal_mean_k);
+        load_double_param("outlier_removal_std_dev_mul_thresh", config.outlier_removal_std_dev_mul_thresh, config.outlier_removal_std_dev_mul_thresh);
+
+        if (yaml_file_root["outlier_removal_enable"]) {
+            try {
+                config.outlier_removal_enable = yaml_file_root["outlier_removal_enable"].as<bool>();
+            } catch (const YAML::TypedBadConversion<bool>& e) {
+                std::cerr << "警告: 設定ファイル内のキー 'outlier_removal_enable' の型変換に失敗しました。"
+                          << "期待する型: bool, 実際の値: '" << yaml_file_root["outlier_removal_enable"].Scalar() << "' (" << e.what() << "). "
+                          << "デフォルト値 (" << config.outlier_removal_enable << ") を使用します。" << std::endl;
+                // Default value is already set in struct, so no need to re-assign unless specifically handling error differently.
+            } catch (const YAML::Exception& e) {
+                 std::cerr << "警告: 設定項目 'outlier_removal_enable' の読み込み中にYAMLエラーが発生しました。デフォルト値 ("
+                           << config.outlier_removal_enable << ") を使用します。エラー: " << e.what() << std::endl;
+            }
+        } else {
+            std::cout << "情報: 設定ファイルに 'outlier_removal_enable' が見つかりません。デフォルト値 ("
+                      << config.outlier_removal_enable << ") を使用します。" << std::endl;
+        }
+        std::cout << "  外れ値除去 (StatisticalOutlierRemoval): " << (config.outlier_removal_enable ? "有効" : "無効") << std::endl;
+        if (config.outlier_removal_enable) {
+            std::cout << "    MeanK: " << config.outlier_removal_mean_k << std::endl;
+            std::cout << "    StdDevMulThresh: " << config.outlier_removal_std_dev_mul_thresh << std::endl;
+        }
+
        // Load the new boolean parameter for map preview
        if (yaml_file_root["preview_map_on_exit"]) {
            try {
