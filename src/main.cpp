@@ -16,6 +16,11 @@
 #include "map_io.h"
 #include "point_cloud_processor.h" // 新しいヘッダ
 
+// PCL Visualization
+#include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/common/io.h> // For copyPointCloud
+// #include <pcl/search/kdtree.h> // Already included via point_cloud_processor.h or other PCL headers
+
 // Helper function to get file extension (lowercase)
 std::string getFileExtension(const std::string& filepath) {
     try {
@@ -162,6 +167,77 @@ int main(int argc, char* argv[]) {
         // ここでは、警告を出しつつ処理を続行する。必要に応じて return 1; で終了させる。
     }
     // plane_coefficients と plane_inliers は次のステップ (占有グリッド生成) で使用されます。
+
+    // 3.6 地面候補点の可視化 (Visualization of Ground Candidates)
+    std::cout << "\n--- 地面候補点の可視化開始 ---" << std::endl;
+    if (!cloud->points.empty()) { // Ensure original cloud is not empty for visualization
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        pcl::copyPointCloud(*cloud, *colored_cloud); // 元の点群をコピー
+
+        uint8_t r_other = 0, g_other = 255, b_other = 0; // 緑色 (非地面候補)
+        uint8_t r_ground = 255, g_ground = 0, b_ground = 0; // 赤色 (地面候補)
+
+        // まず全点をデフォルト色（緑）に設定
+        for (auto& point : colored_cloud->points) {
+            point.r = r_other;
+            point.g = g_other;
+            point.b = b_other;
+        }
+
+        if (ground_candidates && !ground_candidates->points.empty()) {
+            // 地面候補点が存在する場合、それらを赤色にマークする
+            // KdTreeを使って元の点群内の地面候補点に対応する点を見つける
+            // (注意: ground_candidates は cloud のサブセットなので、インデックスは直接対応しない)
+            pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree_rgb(new pcl::search::KdTree<pcl::PointXYZRGB>());
+            tree_rgb->setInputCloud(colored_cloud);
+
+            for (const auto& ground_point : ground_candidates->points) {
+                pcl::PointXYZRGB search_point_rgb;
+                search_point_rgb.x = ground_point.x;
+                search_point_rgb.y = ground_point.y;
+                search_point_rgb.z = ground_point.z;
+                // RGB値は何でもよいが、XYZが重要
+
+                std::vector<int> point_idx_nkns(1);
+                std::vector<float> point_squared_distance(1);
+
+                if (tree_rgb->nearestKSearch(search_point_rgb, 1, point_idx_nkns, point_squared_distance) > 0) {
+                    if (point_squared_distance[0] < 0.00001f) { // 小さな許容誤差
+                        colored_cloud->points[point_idx_nkns[0]].r = r_ground;
+                        colored_cloud->points[point_idx_nkns[0]].g = g_ground;
+                        colored_cloud->points[point_idx_nkns[0]].b = b_ground;
+                    }
+                }
+            }
+            std::cout << "地面候補点の色付け処理完了。" << std::endl;
+        } else {
+            std::cout << "地面候補点がないため、色付け処理はスキップされました（全点が緑色）。" << std::endl;
+        }
+
+        // PCLViewerの初期化と表示
+        try {
+            pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer - Ground Candidates"));
+            viewer->setBackgroundColor(0.1, 0.1, 0.1); // 背景を濃い灰色に
+
+            pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(colored_cloud);
+            viewer->addPointCloud<pcl::PointXYZRGB>(colored_cloud, rgb, "ground_visualization_cloud");
+            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "ground_visualization_cloud");
+            // viewer->addCoordinateSystem(1.0); // 座標軸の表示
+            viewer->initCameraParameters(); // カメラパラメータを初期化
+
+            std::cout << "PCLViewerを表示します。ウィンドウを閉じて続行してください..." << std::endl;
+            while (!viewer->wasStopped()) {
+                viewer->spinOnce(100);
+            }
+            viewer->close();
+            std::cout << "PCLViewerを閉じました。" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "PCLViewerの初期化または表示中にエラーが発生しました: " << e.what() << std::endl;
+            std::cerr << "ヘッドレス環境ではPCLViewerを実行できない可能性があります。処理は続行します。" << std::endl;
+        }
+    } else {
+        std::cout << "元の点群が空のため、可視化をスキップします。" << std::endl;
+    }
     std::cout << "--- 点群処理終了 ---\n" << std::endl;
 
     // 4. 地図パラメータ計算 (Map Parameter Calculation)
