@@ -61,6 +61,10 @@ bool loadConfig(const std::string& filepath, Config& config) {
         load_int_param("min_cluster_size", config.min_cluster_size, config.min_cluster_size);
         load_int_param("max_cluster_size", config.max_cluster_size, config.max_cluster_size);
 
+        // Load map processing kernel sizes
+        load_int_param("free_space_kernel_size", config.free_space_kernel_size, config.free_space_kernel_size);
+        load_int_param("obstacle_space_kernel_size", config.obstacle_space_kernel_size, config.obstacle_space_kernel_size);
+
        // Load the new boolean parameter for map preview
        if (yaml_file_root["preview_map_on_exit"]) {
            try {
@@ -82,6 +86,9 @@ bool loadConfig(const std::string& filepath, Config& config) {
        }
        // Also print the loaded value
        std::cout << "  プレビュー表示 (終了時): " << (config.preview_map_on_exit ? "有効" : "無効") << std::endl;
+        std::cout << "  フリースペース充填カーネルサイズ: " << config.free_space_kernel_size << std::endl;
+        std::cout << "  障害物スペース充填カーネルサイズ: " << config.obstacle_space_kernel_size << std::endl;
+
 
         return true;
     } catch (const YAML::BadFile& e) {

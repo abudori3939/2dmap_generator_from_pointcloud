@@ -9,8 +9,9 @@
 
 #include "config_loader.h"
 #include "map_parameters.h" // For map_params_util, calculateMapParameters
-#include "map_io.h"         // For GRID_VALUE_UNKNOWN, saveMapAsPGM, saveMapMetadataYAML
+#include "map_io.h"         // For GRID_VALUE_UNKNOWN, GRID_VALUE_FREE, GRID_VALUE_OCCUPIED, saveMapAsPGM, saveMapMetadataYAML
 #include "file_utils.h"     // For ensureDirectoryExists
+#include "map_processor.h"  // For MapProcessor class
 
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
@@ -439,6 +440,44 @@ bool generateOccupancyGrid(PipelineData& data) {
         }
     }
     std::cout << "--- 占有格子地図生成完了 ---" << std::endl;
+
+    // --- Apply Map Processing (Free Space and Obstacle Filling) ---
+    std::cout << "\n--- 後処理 (フリースペース・障害物充填) 開始 ---" << std::endl;
+    MapProcessor map_proc;
+
+    // 1. Create OccupancyGrid object for MapProcessor
+    OccupancyGrid grid_for_processing;
+    grid_for_processing.info.width = data.map_params.width_pixels;
+    grid_for_processing.info.height = data.map_params.height_pixels;
+    grid_for_processing.info.resolution = static_cast<float>(data.map_params.resolution);
+    // The data.occupancy_grid already uses -1 (unknown), 0 (free), 100 (occupied)
+    grid_for_processing.data = data.occupancy_grid;
+
+    std::cout << "  - OccupancyGrid for processing created. Width: " << grid_for_processing.info.width
+              << ", Height: " << grid_for_processing.info.height << ", Data size: " << grid_for_processing.data.size() << std::endl;
+
+    if (grid_for_processing.data.empty() || grid_for_processing.info.width == 0 || grid_for_processing.info.height == 0) {
+        std::cout << "  - 注意: 地図データが空のため、後処理をスキップします。" << std::endl;
+    } else {
+        // 2. Convert to cv::Mat
+        cv::Mat cv_map = map_proc.toCvMat(grid_for_processing);
+        std::cout << "  - OccupancyGridをcv::Matに変換完了。Rows: " << cv_map.rows << ", Cols: " << cv_map.cols << std::endl;
+
+        // 3. Fill Free Space
+        cv::Mat processed_free_map = map_proc.fillFreeSpace(cv_map, data.app_config.free_space_kernel_size);
+        std::cout << "  - フリースペース充填完了。Kernel size: " << data.app_config.free_space_kernel_size << std::endl;
+
+        // 4. Fill Obstacle Space
+        cv::Mat processed_obstacle_map = map_proc.fillObstacleSpace(processed_free_map, data.app_config.obstacle_space_kernel_size);
+        std::cout << "  - 障害物スペース充填完了。Kernel size: " << data.app_config.obstacle_space_kernel_size << std::endl;
+
+        // 5. Convert back to OccupancyGrid data
+        // Pass original grid_for_processing to keep its info (width, height, resolution)
+        data.occupancy_grid = map_proc.toOccupancyGridData(processed_obstacle_map, grid_for_processing);
+        std::cout << "  - cv::MatをOccupancyGridデータに再変換完了。" << std::endl;
+    }
+    std::cout << "--- 後処理 (フリースペース・障害物充填) 完了 ---" << std::endl;
+
     return true;
 }
 
