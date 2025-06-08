@@ -97,8 +97,24 @@ int main(int argc, char* argv[]) {
     std::cout << "\n--- 点群処理開始 ---" << std::endl;
     proc::PointCloudProcessor processor;
 
-    //   3.5.1 法線推定 (Normal Estimation)
+    // Declare point clouds that will be used across multiple scopes here
     pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointIndices::Ptr ground_candidate_indices(new pcl::PointIndices());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients());
+    pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices());
+
+    // MOVED/NEW DECLARATIONS FOR SCOPE FIX:
+    pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Already moved in a previous step by the prompt, but ensure it's here
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_downsampled_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Already moved
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Already moved
+
+    //   3.5.1 法線推定 (Normal Estimation)
+    // pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>); // Moved up
     if (!processor.estimateNormals(cloud, static_cast<float>(app_config.normal_estimation_radius), normals)) {
         std::cerr << "エラー: 法線推定に失敗しました。プログラムを終了します。" << std::endl;
         return 1;
@@ -106,8 +122,8 @@ int main(int argc, char* argv[]) {
     std::cout << "法線推定が正常に完了しました。法線数: " << normals->size() << std::endl;
 
     //   3.5.2 地面候補点の抽出 (Ground Candidate Extraction)
-    pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointIndices::Ptr ground_candidate_indices(new pcl::PointIndices); // Declare indices
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
+    // pcl::PointIndices::Ptr ground_candidate_indices(new pcl::PointIndices); // Moved up
     if (!processor.extractGroundCandidates(cloud, normals, static_cast<float>(app_config.ground_normal_z_threshold), ground_candidates, ground_candidate_indices)) {
         std::cerr << "エラー: 地面候補点の抽出に失敗しました。プログラムを終了します。" << std::endl;
         return 1;
@@ -115,8 +131,8 @@ int main(int argc, char* argv[]) {
     std::cout << "地面候補点の抽出成功。候補点数: " << ground_candidates->size() << ", インデックス数: " << ground_candidate_indices->indices.size() << std::endl;
 
     // Extract non-horizontal points
-    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Declare earlier for wider scope
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
     if (processor.extractNonHorizontalPoints(cloud, ground_candidate_indices, non_horizontal_cloud)) {
         std::cout << "非水平要素の抽出成功。非水平点群の点数: " << non_horizontal_cloud->size() << std::endl;
         // Optionally, visualize non_horizontal_cloud here if needed for debugging
@@ -199,7 +215,7 @@ int main(int argc, char* argv[]) {
     }
 
     //   3.5.4 主地面クラスタの特定 (Main Ground Cluster Extraction)
-    pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>());
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
     // クラスタリングパラメータをapp_configから使用
     float cluster_tolerance = 2.0f * static_cast<float>(app_config.map_resolution); // 許容距離は解像度に応じて設定
     // min_cluster_size と max_cluster_size は app_config から直接使用
@@ -302,8 +318,8 @@ int main(int argc, char* argv[]) {
     // ---- ここまで新しい視覚化コード ----
 
     //   3.5.5 グローバル地面平面のフィッティング (Global Ground Plane Fitting)
-    pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients());
-    pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices());
+    // pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients()); // Moved up
+    // pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices()); // Moved up
     float plane_distance_threshold = 0.02f;
 
     if (processor.fitGlobalGroundPlane(main_ground_cluster, plane_distance_threshold, plane_coefficients, plane_inliers)) {
@@ -319,7 +335,7 @@ int main(int argc, char* argv[]) {
             // Rotate the main ground cluster to be horizontal
             if (main_ground_cluster && !main_ground_cluster->points.empty() && plane_coefficients && !plane_coefficients->values.empty()) {
                 std::cout << "\n--- 主クラスタの水平回転処理開始 ---" << std::endl;
-                pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                // pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
                 Eigen::Matrix4f rotation_matrix; // To store the transformation matrix
                 if (processor.rotateCloudToHorizontal(main_ground_cluster, plane_coefficients, rotated_cloud, rotation_matrix)) {
                     std::cout << "主クラスタの水平回転成功。回転後の点数: " << rotated_cloud->size() << std::endl;
@@ -327,7 +343,7 @@ int main(int argc, char* argv[]) {
                     // Translate the rotated cloud to Z=0
                     if (rotated_cloud && !rotated_cloud->points.empty()) {
                         std::cout << "\n--- 水平化済みクラスタのZ=0への平行移動処理開始 ---" << std::endl;
-                        pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                        // pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
                         Eigen::Matrix4f translation_matrix;
                         if (processor.translateCloudToZZero(rotated_cloud, translated_cloud, translation_matrix)) {
                             std::cout << "水平化済みクラスタのZ=0への平行移動成功。点数: " << translated_cloud->size() << std::endl;
@@ -351,9 +367,9 @@ int main(int argc, char* argv[]) {
                                 processor.visualizeCombinedClouds(translated_cloud, non_horizontal_transformed_cloud, "Combined Transformed Clouds");
 
                                 // Declare downsampled cloud pointer before the conditional block
-                                pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_downsampled_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                                // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_downsampled_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
                                 // Declare filtered cloud pointer before the conditional block as well
-                                pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                                // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
 
                                 if (non_horizontal_transformed_cloud && !non_horizontal_transformed_cloud->points.empty()) {
                                     std::cout << "\n--- 非水平要素のダウンサンプリング開始 ---" << std::endl;
