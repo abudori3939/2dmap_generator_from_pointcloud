@@ -297,6 +297,40 @@ int main(int argc, char* argv[]) {
         std::cout << "グローバル地面平面のフィッティング成功。" << std::endl;
         if (plane_coefficients->values.empty()) {
              std::cout << "注意: 平面フィッティングは成功と報告されましたが、係数が空です。" << std::endl;
+        } else {
+            // Visualize the main ground cluster and the fitted plane
+            std::cout << "\n--- 地面平面と主クラスタの可視化開始 ---" << std::endl;
+            processor.visualizePlane(main_ground_cluster, plane_coefficients);
+            std::cout << "--- 地面平面と主クラスタの可視化終了 ---" << std::endl;
+
+            // Rotate the main ground cluster to be horizontal
+            if (main_ground_cluster && !main_ground_cluster->points.empty() && plane_coefficients && !plane_coefficients->values.empty()) {
+                std::cout << "\n--- 主クラスタの水平回転処理開始 ---" << std::endl;
+                pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                Eigen::Matrix4f rotation_matrix; // To store the transformation matrix
+                if (processor.rotateCloudToHorizontal(main_ground_cluster, plane_coefficients, rotated_cloud, rotation_matrix)) {
+                    std::cout << "主クラスタの水平回転成功。回転後の点数: " << rotated_cloud->size() << std::endl;
+
+                    // Translate the rotated cloud to Z=0
+                    if (rotated_cloud && !rotated_cloud->points.empty()) {
+                        std::cout << "\n--- 水平化済みクラスタのZ=0への平行移動処理開始 ---" << std::endl;
+                        pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                        Eigen::Matrix4f translation_matrix;
+                        if (processor.translateCloudToZZero(rotated_cloud, translated_cloud, translation_matrix)) {
+                            std::cout << "水平化済みクラスタのZ=0への平行移動成功。点数: " << translated_cloud->size() << std::endl;
+                            processor.visualizeCloud(translated_cloud, "Translated Cloud (Z=0)");
+                        } else {
+                            std::cout << "警告: 水平化済みクラスタのZ=0への平行移動に失敗しました。" << std::endl;
+                        }
+                        std::cout << "--- 水平化済みクラスタのZ=0への平行移動処理終了 ---" << std::endl;
+                    } else {
+                        std::cout << "警告: 回転後クラスタが空のため、Z=0への平行移動をスキップします。" << std::endl;
+                    }
+                } else {
+                    std::cout << "警告: 主クラスタの水平回転に失敗しました。" << std::endl;
+                }
+                std::cout << "--- 主クラスタの水平回転処理終了 ---" << std::endl;
+            }
         }
     } else {
         std::cout << "情報: グローバル地面平面のフィッティングに失敗、または平面が見つかりませんでした。" << std::endl;

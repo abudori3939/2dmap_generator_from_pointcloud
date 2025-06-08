@@ -7,6 +7,10 @@
 #include <pcl/PointIndices.h>      // For inliers
 #include <pcl/search/kdtree.h>
 #include <pcl/search/search.h>
+#include <pcl/visualization/pcl_visualizer.h> // For PCLVisualizer
+#include <pcl/common/common.h>                // For centroid calculation
+#include <pcl/common/transforms.h>            // For point cloud transformation
+#include <Eigen/Geometry>                     // For AngleAxisf, Matrix4f etc.
 
 namespace map_config {
     struct Config;
@@ -53,6 +57,31 @@ public:
         float distance_threshold,
         pcl::ModelCoefficients::Ptr& output_plane_coefficients,
         pcl::PointIndices::Ptr& output_plane_inliers
+    );
+
+    void visualizePlane(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+        const pcl::ModelCoefficients::ConstPtr& plane_coefficients
+    );
+
+    bool rotateCloudToHorizontal(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
+        const pcl::ModelCoefficients::ConstPtr& plane_coefficients,
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
+        Eigen::Matrix4f& rotation_transform // Output parameter
+    );
+
+    bool translateCloudToZZero(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud, // Should be the rotated cloud
+        // const Eigen::Matrix4f& rotation_transform, // May not be needed if cloud is already rotated
+        // const pcl::ModelCoefficients::ConstPtr& original_plane_coefficients, // May not be needed
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
+        Eigen::Matrix4f& translation_transform      // Output parameter
+    );
+
+    void visualizeCloud(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+        const std::string& window_title
     );
 
 private:
