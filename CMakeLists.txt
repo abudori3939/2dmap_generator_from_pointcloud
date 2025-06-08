@@ -4,16 +4,12 @@ project(OccupancyGridMapGenerator)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# PCLを探す (コンポーネント指定なし、または基本的なもののみ)
+# PCLを探す
 find_package(PCL REQUIRED)
-# find_package(PCL REQUIRED COMPONENTS io) # ioコンポーネントだけを指定するのも試す価値あり
+include_directories(${PCL_INCLUDE_DIRS}) # PCLのヘッダファイルを見つけるために必要
 
 # yaml-cppを探す
 find_package(yaml-cpp REQUIRED)
-
-# PCLのインクルードディレクトリとライブラリ定義を追加 (find_package(PCL) がこれらを適切に設定することを期待)
-include_directories(${PCL_INCLUDE_DIRS})
-# add_definitions(${PCL_DEFINITIONS}) # 通常は不要
 
 add_executable(occupancy_grid_map_generator
     src/main.cpp
@@ -21,10 +17,11 @@ add_executable(occupancy_grid_map_generator
     src/config_loader.cpp
     src/map_parameters.cpp
     src/map_io.cpp
+    src/point_cloud_processor.cpp # Added point_cloud_processor.cpp
 )
 
 target_link_libraries(occupancy_grid_map_generator
     PRIVATE
-        ${PCL_LIBRARIES} # PCL::common や PCL::io の代わりに ${PCL_LIBRARIES} を使用
-        yaml-cpp
+        ${PCL_LIBRARIES} # PCLライブラリ群をリンク
+        yaml-cpp         # yaml-cppライブラリをリンク
 )
