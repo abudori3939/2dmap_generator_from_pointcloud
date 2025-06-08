@@ -118,6 +118,7 @@ int main(int argc, char* argv[]) {
    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Non-horizontal points after rotation and translation
    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_downsampled_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // After downsampling non_horizontal_transformed_cloud
    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // After height-filtering non_horizontal_downsampled_cloud
+   pcl::PointCloud<pcl::PointXYZ>::Ptr all_ground_candidates_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>());
 
     //   3.5.1 法線推定 (Normal Estimation)
     // pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>); // Moved up
@@ -372,6 +373,40 @@ int main(int argc, char* argv[]) {
                                 // Call the new combined visualization
                                 processor.visualizeCombinedClouds(translated_cloud, non_horizontal_transformed_cloud, "Combined Transformed Clouds");
 
+// --- BEGINNING OF NEW CODE BLOCK FOR ALL GROUND CANDIDATES TRANSFORMATION ---
+if (ground_candidates && !ground_candidates->points.empty() &&
+    translated_cloud && !translated_cloud->points.empty()) { // Check if source ground candidates exist AND main ground transformation was successful
+
+    std::cout << "\n--- 全ての水平候補点の変換処理開始 ---" << std::endl;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr temp_rotated_ground_candidates(new pcl::PointCloud<pcl::PointXYZ>());
+
+    // Apply the same rotation that was applied to the main_ground_cluster (and non_horizontal_cloud)
+    std::cout << "全ての水平候補点 (" << ground_candidates->size() << "点) を回転中..." << std::endl;
+    pcl::transformPointCloud(*ground_candidates, *temp_rotated_ground_candidates, rotation_matrix);
+
+    // Apply the same translation
+    std::cout << "回転された全ての水平候補点 (" << temp_rotated_ground_candidates->size() << "点) を平行移動中..." << std::endl;
+    pcl::transformPointCloud(*temp_rotated_ground_candidates, *all_ground_candidates_transformed_cloud, translation_matrix);
+
+    std::cout << "全ての水平候補点の変換成功。変換後の点数: " << all_ground_candidates_transformed_cloud->size() << std::endl;
+    std::cout << "--- 全ての水平候補点の変換処理終了 ---" << std::endl;
+
+} else {
+    std::cout << "\n--- 全ての水平候補点の変換処理 (スキップ) ---" << std::endl;
+    if (!ground_candidates || ground_candidates->points.empty()) {
+        std::cout << "理由: 元の水平候補点群が空です。" << std::endl;
+    } else if (!translated_cloud || translated_cloud->points.empty()) {
+        std::cout << "理由: 主地面クラスタの変換が成功しなかったため、有効な変換行列がありません。" << std::endl;
+    }
+    // Ensure all_ground_candidates_transformed_cloud is validly empty
+    all_ground_candidates_transformed_cloud->points.clear();
+    all_ground_candidates_transformed_cloud->width = 0;
+    all_ground_candidates_transformed_cloud->height = 1;
+    all_ground_candidates_transformed_cloud->is_dense = true;
+    std::cout << "all_ground_candidates_transformed_cloud は空として初期化されました。" << std::endl;
+}
+// --- END OF NEW CODE BLOCK ---
+
                                 // Declare downsampled cloud pointer before the conditional block
                                 // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_downsampled_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
                                 // Declare filtered cloud pointer before the conditional block as well
@@ -470,11 +505,11 @@ int main(int argc, char* argv[]) {
    pcl::PointCloud<pcl::PointXYZ>::Ptr combined_for_map_bounds(new pcl::PointCloud<pcl::PointXYZ>());
    std::cout << "\n--- 地図範囲定義のための結合点群作成開始 ---" << std::endl;
 
-   if (translated_cloud && !translated_cloud->points.empty()) {
-       *combined_for_map_bounds += *translated_cloud;
-       std::cout << "  - 追加された地面点群 (translated_cloud) の点数: " << translated_cloud->size() << std::endl;
+   if (all_ground_candidates_transformed_cloud && !all_ground_candidates_transformed_cloud->points.empty()) {
+       *combined_for_map_bounds += *all_ground_candidates_transformed_cloud;
+       std::cout << "  - 追加された変換済みの全地面候補点群 (all_ground_candidates_transformed_cloud) の点数: " << all_ground_candidates_transformed_cloud->size() << std::endl;
    } else {
-       std::cout << "  - 地面点群 (translated_cloud) は空か無効です。" << std::endl;
+       std::cout << "  - 変換済みの全地面候補点群 (all_ground_candidates_transformed_cloud) は空か無効です。" << std::endl;
    }
 
    // Note: non_horizontal_filtered_cloud is used here, which is declared within the
@@ -551,6 +586,48 @@ int main(int argc, char* argv[]) {
              << ", 実際のグリッド要素数: " << occupancy_grid.size()
              << ", 初期値: " << static_cast<int>(map_io_util::GRID_VALUE_UNKNOWN) << std::endl;
    std::cout << "--- 占有格子地図の初期化終了 ---" << std::endl;
+
+// --- BEGINNING OF NEW CODE BLOCK FOR PLOTTING FREE SPACE ---
+   // Plot transformed ground candidate points as FREE space
+   if (all_ground_candidates_transformed_cloud && !all_ground_candidates_transformed_cloud->points.empty()) {
+       if (map_params.width_pixels > 0 && map_params.height_pixels > 0 && !occupancy_grid.empty()) {
+           std::cout << "\n--- 占有格子地図への空き領域（全水平候補）プロット開始 ---" << std::endl;
+           std::cout << "処理対象の点群 (変換済み全水平候補): " << all_ground_candidates_transformed_cloud->size() << " 点" << std::endl;
+           int free_cells_marked = 0;
+           int points_outside_map_free = 0;
+
+           for (const auto& point : all_ground_candidates_transformed_cloud->points) {
+               int map_x = static_cast<int>(std::floor((point.x - map_params.origin_x) / map_params.resolution));
+               int map_y_ros = static_cast<int>(std::floor((point.y - map_params.origin_y) / map_params.resolution));
+               // Convert ROS map y to PGM map y (origin at top-left for PGM)
+               int map_y_pgm = map_params.height_pixels - 1 - map_y_ros;
+
+               if (map_x >= 0 && map_x < map_params.width_pixels &&
+                   map_y_pgm >= 0 && map_y_pgm < map_params.height_pixels) {
+                   size_t index = static_cast<size_t>(map_y_pgm) * map_params.width_pixels + map_x;
+                   if (index < occupancy_grid.size()) { // Safety check
+                       occupancy_grid[index] = map_io_util::GRID_VALUE_FREE; // Mark as white
+                       free_cells_marked++;
+                   } else {
+                       points_outside_map_free++;
+                   }
+               } else {
+                   points_outside_map_free++;
+               }
+           }
+           std::cout << "空き領域プロット完了。 " << free_cells_marked << " 個のセルが空き領域としてマークされました。" << std::endl;
+           if (points_outside_map_free > 0) {
+               std::cout << points_outside_map_free << " 個の点は地図範囲外か、インデックス計算エラーでした。" << std::endl;
+           }
+           std::cout << "--- 占有格子地図への空き領域プロット終了 ---" << std::endl;
+       } else {
+            std::cout << "情報: 地図の次元が無効 (" << map_params.width_pixels << "x" << map_params.height_pixels
+                      << ") または占有格子が空のため、空き領域プロットをスキップします。" << std::endl;
+       }
+   } else {
+       std::cout << "\n情報: プロット対象の変換済み全水平候補点群が空のため、空き領域プロットをスキップします。" << std::endl;
+   }
+// --- END OF NEW CODE BLOCK ---
 
    // OCCUPANCY GRID POPULATION
    if (non_horizontal_filtered_cloud && !non_horizontal_filtered_cloud->points.empty()) {
