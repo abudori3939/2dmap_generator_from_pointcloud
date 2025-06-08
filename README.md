@@ -1,25 +1,25 @@
-# 3D Point Cloud to 2D Occupancy Grid Map Generator
+# 3D点群からの2D占有格子地図（Occupancy Grid Map）生成ツール
 
-This project generates a 2D occupancy grid map from 3D point cloud data.
+このプロジェクトは、3D点群データから2Dの占有格子地図を生成します。
 
-## Installation
+## インストール
 
-1.  Clone the repository.
-2.  Run the installation script to install dependencies (PCL, Eigen):
+1.  リポジトリをクローンします。
+2.  インストールスクリプトを実行して、依存関係（PCL、Eigen）をインストールします。
     ```bash
     ./install.bash
     ```
 
-## Building
+## ビルド方法
 
-1.  Create a build directory:
+1.  ビルドディレクトリを作成します。
     ```bash
     mkdir build
     cd build
     ```
-2.  Run CMake and build the project:
+2.  CMakeを実行し、プロジェクトをビルドします。
     ```bash
     cmake ..
     make
     ```
-The executable `occupancy_grid_map_generator` will be created in the `build` directory.
+実行可能ファイル `occupancy_grid_map_generator` は `build` ディレクトリ内に作成されます。
