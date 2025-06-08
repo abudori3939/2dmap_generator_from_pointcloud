@@ -1,0 +1,5 @@
+map_resolution: 0.05
+robot_height: 0.5
+normal_estimation_radius: 0.1
+ground_normal_z_threshold: 0.9
+block_size: 10.0
