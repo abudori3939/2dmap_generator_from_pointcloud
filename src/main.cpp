@@ -97,8 +97,30 @@ int main(int argc, char* argv[]) {
     std::cout << "\n--- 点群処理開始 ---" << std::endl;
     proc::PointCloudProcessor processor;
 
+    // proc::PointCloudProcessor processor; // Assumed to be declared before this block
+
+   // Point clouds used throughout the processing pipeline
+   pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+   pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>());
+   pcl::PointIndices::Ptr ground_candidate_indices(new pcl::PointIndices);
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Holds points not initially classified as ground candidates
+   pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>());
+
+   pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients());
+   pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices());
+
+   // Clouds related to ground transformation
+   pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Ground after rotation
+   pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Ground after rotation and translation to Z=0
+
+   // Clouds related to non-horizontal (obstacle) point transformation and filtering
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Non-horizontal points after rotation
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Non-horizontal points after rotation and translation
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_downsampled_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // After downsampling non_horizontal_transformed_cloud
+   pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // After height-filtering non_horizontal_downsampled_cloud
+
     //   3.5.1 法線推定 (Normal Estimation)
-    pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+    // pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>); // Moved up
     if (!processor.estimateNormals(cloud, static_cast<float>(app_config.normal_estimation_radius), normals)) {
         std::cerr << "エラー: 法線推定に失敗しました。プログラムを終了します。" << std::endl;
         return 1;
@@ -106,8 +128,8 @@ int main(int argc, char* argv[]) {
     std::cout << "法線推定が正常に完了しました。法線数: " << normals->size() << std::endl;
 
     //   3.5.2 地面候補点の抽出 (Ground Candidate Extraction)
-    pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointIndices::Ptr ground_candidate_indices(new pcl::PointIndices); // Declare indices
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr ground_candidates(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
+    // pcl::PointIndices::Ptr ground_candidate_indices(new pcl::PointIndices); // Moved up
     if (!processor.extractGroundCandidates(cloud, normals, static_cast<float>(app_config.ground_normal_z_threshold), ground_candidates, ground_candidate_indices)) {
         std::cerr << "エラー: 地面候補点の抽出に失敗しました。プログラムを終了します。" << std::endl;
         return 1;
@@ -115,8 +137,8 @@ int main(int argc, char* argv[]) {
     std::cout << "地面候補点の抽出成功。候補点数: " << ground_candidates->size() << ", インデックス数: " << ground_candidate_indices->indices.size() << std::endl;
 
     // Extract non-horizontal points
-    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Declare earlier for wider scope
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
     if (processor.extractNonHorizontalPoints(cloud, ground_candidate_indices, non_horizontal_cloud)) {
         std::cout << "非水平要素の抽出成功。非水平点群の点数: " << non_horizontal_cloud->size() << std::endl;
         // Optionally, visualize non_horizontal_cloud here if needed for debugging
@@ -199,7 +221,7 @@ int main(int argc, char* argv[]) {
     }
 
     //   3.5.4 主地面クラスタの特定 (Main Ground Cluster Extraction)
-    pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>());
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr main_ground_cluster(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
     // クラスタリングパラメータをapp_configから使用
     float cluster_tolerance = 2.0f * static_cast<float>(app_config.map_resolution); // 許容距離は解像度に応じて設定
     // min_cluster_size と max_cluster_size は app_config から直接使用
@@ -302,8 +324,8 @@ int main(int argc, char* argv[]) {
     // ---- ここまで新しい視覚化コード ----
 
     //   3.5.5 グローバル地面平面のフィッティング (Global Ground Plane Fitting)
-    pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients());
-    pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices());
+    // pcl::ModelCoefficients::Ptr plane_coefficients(new pcl::ModelCoefficients()); // Moved up
+    // pcl::PointIndices::Ptr plane_inliers(new pcl::PointIndices()); // Moved up
     float plane_distance_threshold = 0.02f;
 
     if (processor.fitGlobalGroundPlane(main_ground_cluster, plane_distance_threshold, plane_coefficients, plane_inliers)) {
@@ -319,7 +341,7 @@ int main(int argc, char* argv[]) {
             // Rotate the main ground cluster to be horizontal
             if (main_ground_cluster && !main_ground_cluster->points.empty() && plane_coefficients && !plane_coefficients->values.empty()) {
                 std::cout << "\n--- 主クラスタの水平回転処理開始 ---" << std::endl;
-                pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                // pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
                 Eigen::Matrix4f rotation_matrix; // To store the transformation matrix
                 if (processor.rotateCloudToHorizontal(main_ground_cluster, plane_coefficients, rotated_cloud, rotation_matrix)) {
                     std::cout << "主クラスタの水平回転成功。回転後の点数: " << rotated_cloud->size() << std::endl;
@@ -327,7 +349,7 @@ int main(int argc, char* argv[]) {
                     // Translate the rotated cloud to Z=0
                     if (rotated_cloud && !rotated_cloud->points.empty()) {
                         std::cout << "\n--- 水平化済みクラスタのZ=0への平行移動処理開始 ---" << std::endl;
-                        pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                        // pcl::PointCloud<pcl::PointXYZ>::Ptr translated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
                         Eigen::Matrix4f translation_matrix;
                         if (processor.translateCloudToZZero(rotated_cloud, translated_cloud, translation_matrix)) {
                             std::cout << "水平化済みクラスタのZ=0への平行移動成功。点数: " << translated_cloud->size() << std::endl;
@@ -336,7 +358,7 @@ int main(int argc, char* argv[]) {
                             // Now, transform the non-horizontal points using the same matrices
                             if (non_horizontal_cloud && !non_horizontal_cloud->points.empty()) {
                                 std::cout << "\n--- 非水平要素の変換処理開始 ---" << std::endl;
-                                pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+                                // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_rotated_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
                                 // Apply the rotation
                                 pcl::transformPointCloud(*non_horizontal_cloud, *non_horizontal_rotated_cloud, rotation_matrix);
 
@@ -350,10 +372,77 @@ int main(int argc, char* argv[]) {
                                 // Call the new combined visualization
                                 processor.visualizeCombinedClouds(translated_cloud, non_horizontal_transformed_cloud, "Combined Transformed Clouds");
 
+                                // Declare downsampled cloud pointer before the conditional block
+                                // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_downsampled_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
+                                // Declare filtered cloud pointer before the conditional block as well
+                                // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
+
+                                if (non_horizontal_transformed_cloud && !non_horizontal_transformed_cloud->points.empty()) {
+                                    std::cout << "\n--- 非水平要素のダウンサンプリング開始 ---" << std::endl;
+                                    float leaf_size = static_cast<float>(app_config.map_resolution);
+                                    if (!processor.downsampleCloud(non_horizontal_transformed_cloud, leaf_size, leaf_size, leaf_size, non_horizontal_downsampled_cloud)) {
+                                        std::cerr << "警告: 非水平要素のダウンサンプリングに失敗しました。以降の処理ではダウンサンプリングされていない非水平要素を使用します。" << std::endl;
+                                        // Fallback: Copy original to downsampled if downsampling fails, to ensure subsequent steps have some input.
+                                        // However, the current downsampleCloud implementation clears the output on failure,
+                                        // so non_horizontal_downsampled_cloud will be empty if it returns false.
+                                        // This is acceptable if subsequent steps can handle an empty cloud.
+                                    } else {
+                                        std::cout << "非水平要素のダウンサンプリング成功。処理前点数: " << non_horizontal_transformed_cloud->size()
+                                                  << ", 処理後点数: " << non_horizontal_downsampled_cloud->size() << std::endl;
+                                    }
+                                    std::cout << "--- 非水平要素のダウンサンプリング終了 ---" << std::endl;
+                                } else {
+                                    std::cout << "情報: 変換後の非水平要素の点群が空のため、ダウンサンプリングをスキップします。" << std::endl;
+                                    // Ensure non_horizontal_downsampled_cloud is empty and valid if it was not processed
+                                    if (non_horizontal_downsampled_cloud->points.empty() && non_horizontal_downsampled_cloud->header.frame_id.empty()) {
+                                         non_horizontal_downsampled_cloud->width = 0;
+                                         non_horizontal_downsampled_cloud->height = 1;
+                                         non_horizontal_downsampled_cloud->is_dense = true;
+                                    }
+                                }
+                                // Subsequent steps should use non_horizontal_downsampled_cloud
+
+                                // Filter the downsampled cloud by height
+                                // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Moved up
+                                if (non_horizontal_downsampled_cloud && !non_horizontal_downsampled_cloud->points.empty()) {
+                                    std::cout << "\n--- 非水平要素の高さフィルタリング開始 ---" << std::endl;
+                                    float min_z_filter = -1.0f;
+                                    float max_z_filter = static_cast<float>(app_config.robot_height);
+                                    if (!processor.filterCloudByHeight(non_horizontal_downsampled_cloud, min_z_filter, max_z_filter, non_horizontal_filtered_cloud)) {
+                                        std::cerr << "警告: 非水平要素の高さフィルタリングに失敗しました。" << std::endl;
+                                        // non_horizontal_filtered_cloud will be empty if filtering fails
+                                    } else {
+                                        std::cout << "非水平要素の高さフィルタリング成功。処理前点数: " << non_horizontal_downsampled_cloud->size()
+                                                  << ", 処理後点数: " << non_horizontal_filtered_cloud->size() << std::endl;
+                                    }
+                                    std::cout << "--- 非水平要素の高さフィルタリング終了 ---" << std::endl;
+                                } else {
+                                    std::cout << "情報: ダウンサンプリング後の非水平要素の点群が空のため、高さフィルタリングをスキップします。" << std::endl;
+                                    if (non_horizontal_filtered_cloud->points.empty() && non_horizontal_filtered_cloud->header.frame_id.empty()) {
+                                        non_horizontal_filtered_cloud->width = 0;
+                                        non_horizontal_filtered_cloud->height = 1;
+                                        non_horizontal_filtered_cloud->is_dense = true;
+                                    }
+                                }
+                                // Subsequent steps (like occupancy grid population) should use non_horizontal_filtered_cloud.
+
                             } else {
                                 std::cout << "情報: 非水平要素の点群が空のため、変換をスキップします。" << std::endl;
                                 // Still visualize the translated ground if non-horizontal is empty
                                 processor.visualizeCombinedClouds(translated_cloud, non_horizontal_transformed_cloud, "Combined Transformed Clouds (Ground Only)");
+                                // Ensure the pre-declared non_horizontal_downsampled_cloud is properly initialized as empty
+                                non_horizontal_downsampled_cloud->width = 0;
+                                non_horizontal_downsampled_cloud->height = 1;
+                                non_horizontal_downsampled_cloud->is_dense = true;
+                                std::cout << "情報: 非水平要素が空だったため、対応するダウンサンプリング済み点群も空として初期化されました。" << std::endl;
+                                // Also ensure the pre-declared filtered cloud is empty and valid in this path
+                                // pcl::PointCloud<pcl::PointXYZ>::Ptr non_horizontal_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>()); // Removed, it's declared outside
+                                non_horizontal_filtered_cloud->width = 0;
+                                non_horizontal_filtered_cloud->height = 1;
+                                non_horizontal_filtered_cloud->is_dense = true;
+                                std::cout << "情報: 非水平要素が空だったため、対応する高さフィルタリング済み点群も空として初期化されました。" << std::endl;
+
+
                             }
                         } else {
                             std::cout << "警告: 水平化済みクラスタのZ=0への平行移動に失敗しました。" << std::endl;
@@ -373,32 +462,134 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "--- 点群処理終了 ---\n" << std::endl;
 
-    // 4. 地図パラメータ計算 (Map Parameter Calculation)
-    map_params_util::MapParameters map_params;
-    if (!map_params_util::calculateMapParameters(cloud, app_config.map_resolution, map_params)) {
-        std::cerr << "エラー: 地図パラメータの計算に失敗しました。プログラムを終了します。" << std::endl;
-        return 1;
-    }
-    std::cout << "計算された地図パラメータ:" << std::endl;
-    std::cout << "  原点X: " << map_params.origin_x << " [m], Y: " << map_params.origin_y << " [m]" << std::endl;
-    std::cout << "  幅: " << map_params.width_pixels << " [ピクセル], 高さ: " << map_params.height_pixels << " [ピクセル]" << std::endl;
-    std::cout << "  解像度: " << map_params.resolution << " [m/pixel]" << std::endl;
+    // MOVED DECLARATIONS for map_params and occupancy_grid
+   map_params_util::MapParameters map_params;
+   std::vector<int8_t> occupancy_grid;
 
-    // 5. 占有格子地図の初期化 (Occupancy Grid Initialization)
-    std::vector<int8_t> occupancy_grid;
-    try {
-        occupancy_grid.resize(
-            static_cast<size_t>(map_params.width_pixels) * map_params.height_pixels,
-            map_io_util::GRID_VALUE_UNKNOWN
-        );
-    } catch (const std::bad_alloc& e) {
-        std::cerr << "エラー: 地図データ構造のためのメモリ確保に失敗 ("
-                  << static_cast<size_t>(map_params.width_pixels) * map_params.height_pixels * sizeof(int8_t)
-                  << " bytes requested): " << e.what() << std::endl;
+   // Create a combined point cloud for calculating map bounds in the stabilized coordinate system
+   pcl::PointCloud<pcl::PointXYZ>::Ptr combined_for_map_bounds(new pcl::PointCloud<pcl::PointXYZ>());
+   std::cout << "\n--- 地図範囲定義のための結合点群作成開始 ---" << std::endl;
+
+   if (translated_cloud && !translated_cloud->points.empty()) {
+       *combined_for_map_bounds += *translated_cloud;
+       std::cout << "  - 追加された地面点群 (translated_cloud) の点数: " << translated_cloud->size() << std::endl;
+   } else {
+       std::cout << "  - 地面点群 (translated_cloud) は空か無効です。" << std::endl;
+   }
+
+   // Note: non_horizontal_filtered_cloud is used here, which is declared within the
+   // 'if (non_horizontal_cloud && !non_horizontal_cloud->points.empty())' block.
+   // This means if that block was skipped, non_horizontal_filtered_cloud might not be in scope or initialized.
+   // The prompt's logic for initializing non_horizontal_filtered_cloud in the 'else' path for non_horizontal_cloud
+   // handles this, ensuring it's always declared.
+   if (non_horizontal_filtered_cloud && !non_horizontal_filtered_cloud->points.empty()) {
+       *combined_for_map_bounds += *non_horizontal_filtered_cloud;
+       std::cout << "  - 追加された障害物点群 (non_horizontal_filtered_cloud) の点数: " << non_horizontal_filtered_cloud->size() << std::endl;
+   } else {
+       std::cout << "  - 障害物点群 (non_horizontal_filtered_cloud) は空か無効です。" << std::endl;
+   }
+
+   if (combined_for_map_bounds->points.empty()) {
+        std::cout << "  - 結合後の点群 (combined_for_map_bounds) は空です。" << std::endl;
+        combined_for_map_bounds->width = 0;
+        combined_for_map_bounds->height = 1;
+        combined_for_map_bounds->is_dense = true; // Validly empty
+   } else {
+        // Set header, width, height, and is_dense for the combined cloud
+        // Attempt to copy header from one of the source clouds if they have a frame_id
+        if (translated_cloud && !translated_cloud->points.empty() && !translated_cloud->header.frame_id.empty()) {
+            combined_for_map_bounds->header = translated_cloud->header;
+        } else if (non_horizontal_filtered_cloud && !non_horizontal_filtered_cloud->points.empty() && !non_horizontal_filtered_cloud->header.frame_id.empty()) {
+            combined_for_map_bounds->header = non_horizontal_filtered_cloud->header;
+        } else if (cloud && !cloud->header.frame_id.empty()) {
+            // Fallback to original cloud's frame_id if others are not available or empty.
+            // This is just for frame_id, coordinates are in the transformed system.
+            combined_for_map_bounds->header.frame_id = cloud->header.frame_id;
+        }
+        combined_for_map_bounds->width = combined_for_map_bounds->points.size();
+        combined_for_map_bounds->height = 1;
+        combined_for_map_bounds->is_dense = true; // Assuming points are finite after prior processing
+       std::cout << "  - 結合後の総点数 (combined_for_map_bounds): " << combined_for_map_bounds->size() << std::endl;
+   }
+   std::cout << "--- 地図範囲定義のための結合点群作成終了 ---" << std::endl;
+
+   // MAP PARAMETER CALCULATION (MOVED HERE and MODIFIED to use combined_for_map_bounds)
+   std::cout << "\n--- 地図パラメータ計算開始 (結合点群基準) ---" << std::endl;
+   if (!map_params_util::calculateMapParameters(combined_for_map_bounds, app_config.map_resolution, map_params)) {
+       std::cerr << "エラー: 地図パラメータの計算に失敗しました。入力となる結合点群が空であるか、解像度が不適切である可能性があります。プログラムを終了します。" << std::endl;
+       return 1; // Exits if combined_for_map_bounds is empty or other error in calculation
+   }
+   std::cout << "計算された地図パラメータ (結合点群基準):" << std::endl;
+   std::cout << "  原点X: " << map_params.origin_x << " [m], Y: " << map_params.origin_y << " [m]" << std::endl;
+   std::cout << "  幅: " << map_params.width_pixels << " [ピクセル], 高さ: " << map_params.height_pixels << " [ピクセル]" << std::endl;
+   std::cout << "  解像度: " << map_params.resolution << " [m/pixel]" << std::endl;
+   std::cout << "--- 地図パラメータ計算終了 ---" << std::endl;
+
+   // OCCUPANCY GRID INITIALIZATION (MOVED HERE)
+   std::cout << "\n--- 占有格子地図の初期化開始 ---" << std::endl;
+   try {
+       size_t grid_size = 0;
+       if (map_params.width_pixels > 0 && map_params.height_pixels > 0) {
+            grid_size = static_cast<size_t>(map_params.width_pixels) * static_cast<size_t>(map_params.height_pixels);
+       } else {
+            std::cout << "情報: 地図の幅または高さが0以下です (" << map_params.width_pixels << "x" << map_params.height_pixels
+                      << ")。空の占有格子地図を作成します。" << std::endl;
+       }
+       occupancy_grid.assign(grid_size, map_io_util::GRID_VALUE_UNKNOWN);
+   } catch (const std::bad_alloc& e) {
+       std::cerr << "エラー: 地図データ構造のためのメモリ確保に失敗 ("
+                 << (static_cast<size_t>(map_params.width_pixels) * static_cast<size_t>(map_params.height_pixels) * sizeof(int8_t))
+                 << " bytes requested): " << e.what() << std::endl;
+       return 1;
+   } catch (const std::length_error& e) {
+        std::cerr << "エラー: 地図データ構造のサイズが大きすぎます ("
+                  << (static_cast<size_t>(map_params.width_pixels) * static_cast<size_t>(map_params.height_pixels))
+                  << " elements): " << e.what() << std::endl;
         return 1;
-    }
-    std::cout << "占有格子地図を初期化。サイズ: " << map_params.width_pixels << "x" << map_params.height_pixels
-              << ", 初期値: " << static_cast<int>(map_io_util::GRID_VALUE_UNKNOWN) << std::endl;
+   }
+   std::cout << "占有格子地図を初期化。リクエストサイズ: " << map_params.width_pixels << "x" << map_params.height_pixels
+             << ", 実際のグリッド要素数: " << occupancy_grid.size()
+             << ", 初期値: " << static_cast<int>(map_io_util::GRID_VALUE_UNKNOWN) << std::endl;
+   std::cout << "--- 占有格子地図の初期化終了 ---" << std::endl;
+
+   // OCCUPANCY GRID POPULATION
+   if (non_horizontal_filtered_cloud && !non_horizontal_filtered_cloud->points.empty()) {
+       if (map_params.width_pixels > 0 && map_params.height_pixels > 0 && !occupancy_grid.empty()) {
+           std::cout << "\n--- 占有格子地図への障害物プロット開始 ---" << std::endl;
+           std::cout << "処理対象の点群 (フィルタリング済み非水平要素): " << non_horizontal_filtered_cloud->size() << " 点" << std::endl;
+           int obstacles_marked = 0;
+           int points_outside_map = 0;
+
+           for (const auto& point : non_horizontal_filtered_cloud->points) {
+               int map_x = static_cast<int>(std::floor((point.x - map_params.origin_x) / map_params.resolution));
+               int map_y_ros = static_cast<int>(std::floor((point.y - map_params.origin_y) / map_params.resolution));
+               int map_y_pgm = map_params.height_pixels - 1 - map_y_ros;
+
+               if (map_x >= 0 && map_x < map_params.width_pixels &&
+                   map_y_pgm >= 0 && map_y_pgm < map_params.height_pixels) {
+                   size_t index = static_cast<size_t>(map_y_pgm) * map_params.width_pixels + map_x;
+                   if (index < occupancy_grid.size()) { // Safety check
+                       occupancy_grid[index] = map_io_util::GRID_VALUE_OCCUPIED;
+                       obstacles_marked++;
+                   } else {
+                        points_outside_map++;
+                   }
+               } else {
+                   points_outside_map++;
+               }
+           }
+           std::cout << "障害物プロット完了。 " << obstacles_marked << " 個のセルが障害物としてマークされました。" << std::endl;
+           if (points_outside_map > 0) {
+               std::cout << points_outside_map << " 個の点は地図範囲外か、インデックス計算エラーでした。" << std::endl;
+           }
+           std::cout << "--- 占有格子地図への障害物プロット終了 ---" << std::endl;
+       } else {
+            std::cout << "情報: 地図の次元が無効 (" << map_params.width_pixels << "x" << map_params.height_pixels
+                      << ") または占有格子が空のため、障害物プロットをスキップします。" << std::endl;
+       }
+   } else {
+       std::cout << "\n情報: プロット対象の障害物点群が空のため、占有格子地図への障害物プロットをスキップします。" << std::endl;
+   }
 
     // 6. 地図出力 (Map Output)
     std::string output_dir = "output";
@@ -417,6 +608,15 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "地図が " << output_dir << " に正常に出力されました。" << std::endl;
+
+   if (app_config.preview_map_on_exit) {
+       std::cout << "\n情報: 地図のプレビュー表示が設定で有効になっています。" << std::endl;
+       std::cout << "      しかし、このバージョンでは直接的なGUIプレビュー機能は実装されていません。" << std::endl;
+       std::cout << "      保存された地図ファイルを確認してください: " << pgm_file_path << std::endl;
+       // If a simple command-line viewer invocation were desired later, it would go here.
+       // For now, just a message.
+   }
+
     std::cout << "プログラムは正常に終了しました。" << std::endl;
     return 0;
 }

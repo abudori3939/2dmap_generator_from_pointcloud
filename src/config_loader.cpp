@@ -61,6 +61,28 @@ bool loadConfig(const std::string& filepath, Config& config) {
         load_int_param("min_cluster_size", config.min_cluster_size, config.min_cluster_size);
         load_int_param("max_cluster_size", config.max_cluster_size, config.max_cluster_size);
 
+       // Load the new boolean parameter for map preview
+       if (yaml_file_root["preview_map_on_exit"]) {
+           try {
+               config.preview_map_on_exit = yaml_file_root["preview_map_on_exit"].as<bool>();
+           } catch (const YAML::TypedBadConversion<bool>& e) {
+               std::cerr << "警告: 設定ファイル内のキー 'preview_map_on_exit' の型変換に失敗しました。"
+                         << "期待する型: bool, 実際の値: '" << yaml_file_root["preview_map_on_exit"].Scalar() << "' (" << e.what() << "). "
+                         << "デフォルト値 (" << false << ") を使用します。" << std::endl;
+               config.preview_map_on_exit = false; // Default to false on error
+           } catch (const YAML::Exception& e) {
+               std::cerr << "警告: 設定項目 'preview_map_on_exit' の読み込み中にYAMLエラーが発生しました。デフォルト値 ("
+                         << false << ") を使用します。エラー: " << e.what() << std::endl;
+               config.preview_map_on_exit = false; // Default to false on error
+           }
+       } else {
+           std::cout << "情報: 設定ファイルに 'preview_map_on_exit' が見つかりません。デフォルト値 ("
+                     << false << ") を使用します。" << std::endl;
+           config.preview_map_on_exit = false; // Default to false if not found
+       }
+       // Also print the loaded value
+       std::cout << "  プレビュー表示 (終了時): " << (config.preview_map_on_exit ? "有効" : "無効") << std::endl;
+
         return true;
     } catch (const YAML::BadFile& e) {
         std::cerr << "エラー: 設定ファイルが見つからないか、読み取り権限がありません: " << filepath
