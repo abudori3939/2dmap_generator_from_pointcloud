@@ -12,6 +12,7 @@
 #include <pcl/common/transforms.h>            // For point cloud transformation
 #include <pcl/filters/voxel_grid.h>           // For VoxelGrid filter
 #include <pcl/filters/passthrough.h>          // For PassThrough filter
+#include <pcl/filters/statistical_outlier_removal.h>
 #include <Eigen/Geometry>                     // For AngleAxisf, Matrix4f etc.
 
 namespace map_config {
@@ -104,6 +105,9 @@ public:
         float leaf_size_x,
         float leaf_size_y,
         float leaf_size_z,
+        bool outlier_removal_enable, // New parameter
+        int outlier_removal_mean_k,    // New parameter
+        float outlier_removal_std_dev_mul_thresh, // New parameter
         pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud
     );
 

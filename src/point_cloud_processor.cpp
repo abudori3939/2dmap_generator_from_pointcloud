@@ -682,6 +682,9 @@ bool PointCloudProcessor::downsampleCloud(
     float leaf_size_x,
     float leaf_size_y,
     float leaf_size_z,
+    bool outlier_removal_enable,
+    int outlier_removal_mean_k,
+    float outlier_removal_std_dev_mul_thresh,
     pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud) {
 
     if (!input_cloud || input_cloud->points.empty()) {
@@ -698,8 +701,6 @@ bool PointCloudProcessor::downsampleCloud(
     if (leaf_size_x <= 0 || leaf_size_y <= 0 || leaf_size_z <= 0) {
         std::cerr << "エラー (DownsampleCloud): リーフサイズは正の値でなければなりません。指定値: X="
                   << leaf_size_x << ", Y=" << leaf_size_y << ", Z=" << leaf_size_z << std::endl;
-        // Optionally, copy input to output if leaf size is invalid, or just return false.
-        // For now, let's just return false.
         return false;
     }
 
@@ -717,7 +718,39 @@ bool PointCloudProcessor::downsampleCloud(
         return false;
     }
 
-    std::cout << "ダウンサンプリング完了。出力点数: " << output_cloud->size() << std::endl;
+    std::cout << "ダウンサンプリング完了。VoxelGrid出力点数: " << output_cloud->size() << std::endl;
+
+    if (outlier_removal_enable) {
+        if (output_cloud->points.empty()) {
+            std::cout << "情報 (OutlierRemoval): ダウンサンプリング後の点群が空のため、外れ値除去をスキップします。" << std::endl;
+        } else {
+            std::cout << "外れ値除去を開始します... 入力点数: " << output_cloud->size()
+                      << ", MeanK: " << outlier_removal_mean_k
+                      << ", StdDevMulThresh: " << outlier_removal_std_dev_mul_thresh << std::endl;
+
+            pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+            sor.setInputCloud(output_cloud); // Operate on the downsampled cloud
+            sor.setMeanK(outlier_removal_mean_k);
+            sor.setStddevMulThresh(outlier_removal_std_dev_mul_thresh);
+            // It's important to create a temporary cloud for SOR output,
+            // then copy back to output_cloud if successful.
+            // This is because sor.filter(*output_cloud) might fail if output_cloud is the same as input.
+            pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered_sor(new pcl::PointCloud<pcl::PointXYZ>);
+            try {
+                sor.filter(*cloud_filtered_sor);
+            } catch (const std::exception& e) {
+                std::cerr << "エラー (OutlierRemoval): StatisticalOutlierRemovalフィルタリング中に例外が発生しました: " << e.what() << std::endl;
+                // Decide if we should return false or continue with the cloud before SOR
+                // For now, let's return false as the operation was requested but failed.
+                return false;
+            }
+
+
+            std::cout << "外れ値除去完了。出力点数: " << cloud_filtered_sor->size() << std::endl;
+            *output_cloud = *cloud_filtered_sor; // Copy the result back
+        }
+    }
+    std::cout << "最終的なダウンサンプリング処理完了。出力点数: " << output_cloud->size() << std::endl;
     return true;
 }
 
