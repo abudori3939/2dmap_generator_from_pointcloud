@@ -1,9 +1,13 @@
 #include <iostream>
 #include <string>
 #include <vector>
-// PCL includes (only what's directly needed by main)
-#include <pcl/io/pcd_io.h>     // For pcl::io::loadPCDFile
-#include <pcl/point_types.h>   // For pcl::PointXYZ
+#include <filesystem> // For path operations like getting extension (C++17)
+#include <algorithm>  // For std::transform to use with ::tolower
+
+// PCL includes
+#include <pcl/io/pcd_io.h>
+#include <pcl/io/ply_io.h> // Added for PLY support
+#include <pcl/point_types.h>
 
 // Custom module includes
 #include "file_utils.h"
@@ -11,16 +15,35 @@
 #include "map_parameters.h"
 #include "map_io.h"
 
+// Helper function to get file extension (lowercase)
+std::string getFileExtension(const std::string& filepath) {
+    try {
+        std::filesystem::path p(filepath);
+        std::string ext = p.extension().string();
+        // Convert extension to lowercase
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c){ return std::tolower(c); });
+        return ext;
+    } catch (const std::filesystem::filesystem_error& e) {
+        // This catch block might not be strictly necessary for basic path operations
+        // if the path string itself is valid, but good for robustness.
+        std::cerr << "ファイルパスエラー (getFileExtension): " << e.what() << std::endl;
+        return ""; // Return empty string on error
+    }
+}
+
+
 int main(int argc, char* argv[]) {
     // 1. 引数解析 (Argument Parsing)
     if (argc != 3) {
-        std::cerr << "使用方法: " << argv[0] << " <PCDファイルパス> <設定ファイルパス>" << std::endl;
+        std::cerr << "使用方法: " << argv[0] << " <PCD/PLYファイルパス> <設定ファイルパス>" << std::endl;
         std::cerr << "例: " << argv[0] << " data/input.pcd config/config.yaml" << std::endl;
+        std::cerr << "   " << argv[0] << " data/input.ply config/config.yaml" << std::endl;
         return 1;
     }
-    std::string pcd_file_path = argv[1];
+    std::string pointcloud_file_path = argv[1]; // Renamed for clarity
     std::string config_file_path = argv[2];
-    std::cout << "PCDファイルパス: " << pcd_file_path << std::endl;
+    std::cout << "点群ファイルパス: " << pointcloud_file_path << std::endl; // Updated label
     std::cout << "設定ファイルパス: " << config_file_path << std::endl;
 
     // 2. 設定読み込み (Configuration Loading)
@@ -37,18 +60,47 @@ int main(int argc, char* argv[]) {
     std::cout << "  地面法線Z閾値: " << app_config.ground_normal_z_threshold << std::endl;
     std::cout << "  ブロックサイズ: " << app_config.block_size << " [m]" << std::endl;
 
+
     // 3. 点群読み込み (Point Cloud Loading)
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-    std::cout << "PCDファイルを読み込み中: " << pcd_file_path << std::endl;
-    if (pcl::io::loadPCDFile<pcl::PointXYZ>(pcd_file_path, *cloud) == -1) {
-        std::cerr << "エラー: PCDファイルの読み込みに失敗しました: " << pcd_file_path << std::endl;
-        PCL_ERROR("PCDファイルの読み込みに失敗: %s \n", pcd_file_path.c_str()); // Kept Japanese PCL error
+    std::cout << "点群ファイルを読み込み中: " << pointcloud_file_path << std::endl; // Updated label
+
+    std::string extension = getFileExtension(pointcloud_file_path);
+
+    int load_status = -1; // PCL loaders typically return 0 on success, -1 on failure
+
+    if (extension == ".pcd") {
+        std::cout << "PCDファイルとして読み込みます。" << std::endl;
+        load_status = pcl::io::loadPCDFile<pcl::PointXYZ>(pointcloud_file_path, *cloud);
+    } else if (extension == ".ply") {
+        std::cout << "PLYファイルとして読み込みます。" << std::endl;
+        load_status = pcl::io::loadPLYFile<pcl::PointXYZ>(pointcloud_file_path, *cloud);
+    } else {
+        std::cerr << "エラー: 未サポートのファイル拡張子です: '" << extension << "'" << std::endl;
+        std::cerr << "PCD (.pcd) または PLY (.ply) ファイルを指定してください。" << std::endl;
         return -1;
     }
-    std::cout << "PCDファイルから " << cloud->width * cloud->height << " 点のデータを読み込みました。" << std::endl;
+
+    if (load_status == -1) {
+        std::cerr << "エラー: 点群ファイルの読み込みに失敗しました: " << pointcloud_file_path << std::endl;
+        // PCL_ERROR might be redundant if PCL loaders log verbosely, but can be kept for emphasis.
+        // PCL_ERROR("Couldn't read file %s \n", pointcloud_file_path.c_str());
+        return -1;
+    }
+
+    // 点群が実際にデータを保持しているか確認 (特にPLYローダーが0点を返す場合があるため)
+    if (cloud->points.empty()) {
+         std::cerr << "エラー: 点群ファイルは読み込まれましたが、データが空です: " << pointcloud_file_path << std::endl;
+         return -1;
+    }
+
+    std::cout << "点群ファイルから " << cloud->width * cloud->height << " 点のデータを読み込みました。" << std::endl;
+
 
     // 4. 地図パラメータ計算 (Map Parameter Calculation)
     map_params_util::MapParameters map_params;
+    // The check for cloud->points.empty() is still in calculateMapParameters for robustness,
+    // though it's also checked above after loading.
     if (!map_params_util::calculateMapParameters(cloud, app_config.map_resolution, map_params)) {
         std::cerr << "エラー: 地図パラメータの計算に失敗しました。プログラムを終了します。" << std::endl;
         return 1;
@@ -78,7 +130,7 @@ int main(int argc, char* argv[]) {
     std::string output_dir = "output";
     utils::ensureDirectoryExists(output_dir);
 
-    std::string pgm_file_basename = "map.pgm"; // Base name for the pgm file
+    std::string pgm_file_basename = "map.pgm";
     std::string pgm_file_path = output_dir + "/" + pgm_file_basename;
     std::string yaml_file_path = output_dir + "/map_metadata.yaml";
 
