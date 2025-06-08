@@ -20,6 +20,8 @@ struct Config {
     int min_cluster_size = 50;    // クラスタを構成する最小点数
     int max_cluster_size = 25000; // クラスタを構成する最大点数
 
+    bool preview_map_on_exit = false; // 地図プレビュー表示フラグ
+
     // 今後、他のパラメータもここに追加
 };
 

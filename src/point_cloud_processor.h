@@ -10,6 +10,8 @@
 #include <pcl/visualization/pcl_visualizer.h> // For PCLVisualizer
 #include <pcl/common/common.h>                // For centroid calculation
 #include <pcl/common/transforms.h>            // For point cloud transformation
+#include <pcl/filters/voxel_grid.h>           // For VoxelGrid filter
+#include <pcl/filters/passthrough.h>          // For PassThrough filter
 #include <Eigen/Geometry>                     // For AngleAxisf, Matrix4f etc.
 
 namespace map_config {
@@ -95,6 +97,21 @@ public:
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& ground_cloud,
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& nonground_cloud,
         const std::string& window_title
+    );
+
+    bool downsampleCloud(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
+        float leaf_size_x,
+        float leaf_size_y,
+        float leaf_size_z,
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud
+    );
+
+    bool filterCloudByHeight(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
+        float min_z,
+        float max_z,
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud
     );
 
 private:

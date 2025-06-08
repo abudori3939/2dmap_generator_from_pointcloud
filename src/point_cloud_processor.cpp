@@ -677,4 +677,91 @@ void PointCloudProcessor::visualizeCombinedClouds(
     std::cout << "Visualization stopped for window '" << window_title << "'." << std::endl;
 }
 
+bool PointCloudProcessor::downsampleCloud(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
+    float leaf_size_x,
+    float leaf_size_y,
+    float leaf_size_z,
+    pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud) {
+
+    if (!input_cloud || input_cloud->points.empty()) {
+        std::cerr << "エラー (DownsampleCloud): 入力点群が空または無効です。" << std::endl;
+        if (output_cloud) output_cloud->clear(); // Ensure output is cleared
+        return false;
+    }
+    if (!output_cloud) {
+        std::cerr << "エラー (DownsampleCloud): 出力点群ポインタが無効 (null) です。" << std::endl;
+        return false;
+    }
+    output_cloud->clear(); // Clear previous data
+
+    if (leaf_size_x <= 0 || leaf_size_y <= 0 || leaf_size_z <= 0) {
+        std::cerr << "エラー (DownsampleCloud): リーフサイズは正の値でなければなりません。指定値: X="
+                  << leaf_size_x << ", Y=" << leaf_size_y << ", Z=" << leaf_size_z << std::endl;
+        // Optionally, copy input to output if leaf size is invalid, or just return false.
+        // For now, let's just return false.
+        return false;
+    }
+
+    std::cout << "ダウンサンプリングを開始します... 入力点数: " << input_cloud->size()
+              << ", リーフサイズ: X=" << leaf_size_x << " Y=" << leaf_size_y << " Z=" << leaf_size_z << std::endl;
+
+    pcl::VoxelGrid<pcl::PointXYZ> vg;
+    vg.setInputCloud(input_cloud);
+    vg.setLeafSize(leaf_size_x, leaf_size_y, leaf_size_z);
+
+    try {
+        vg.filter(*output_cloud);
+    } catch (const std::exception& e) {
+        std::cerr << "エラー (DownsampleCloud): VoxelGridフィルタリング中に例外が発生しました: " << e.what() << std::endl;
+        return false;
+    }
+
+    std::cout << "ダウンサンプリング完了。出力点数: " << output_cloud->size() << std::endl;
+    return true;
+}
+
+bool PointCloudProcessor::filterCloudByHeight(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& input_cloud,
+    float min_z,
+    float max_z,
+    pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud) {
+
+    if (!input_cloud || input_cloud->points.empty()) {
+        std::cerr << "エラー (FilterByHeight): 入力点群が空または無効です。" << std::endl;
+        if (output_cloud) output_cloud->clear(); // Ensure output is cleared
+        return false;
+    }
+    if (!output_cloud) {
+        std::cerr << "エラー (FilterByHeight): 出力点群ポインタが無効 (null) です。" << std::endl;
+        return false;
+    }
+    output_cloud->clear(); // Clear previous data
+
+    if (min_z >= max_z) {
+        std::cerr << "エラー (FilterByHeight): min_z (" << min_z
+                  << ") は max_z (" << max_z << ") より小さくなければなりません。" << std::endl;
+        return false;
+    }
+
+    std::cout << "高さによるフィルタリングを開始します... 入力点数: " << input_cloud->size()
+              << ", 最小Z: " << min_z << ", 最大Z: " << max_z << std::endl;
+
+    pcl::PassThrough<pcl::PointXYZ> pass;
+    pass.setInputCloud(input_cloud);
+    pass.setFilterFieldName("z");
+    pass.setFilterLimits(min_z, max_z);
+    // pass.setKeepOrganized(false); // Default is false, explicitly stating if needed
+
+    try {
+        pass.filter(*output_cloud);
+    } catch (const std::exception& e) {
+        std::cerr << "エラー (FilterByHeight): PassThroughフィルタリング中に例外が発生しました: " << e.what() << std::endl;
+        return false;
+    }
+
+    std::cout << "高さによるフィルタリング完了。出力点数: " << output_cloud->size() << std::endl;
+    return true;
+}
+
 } // namespace proc
