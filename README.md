@@ -1,15 +1,17 @@
-# 3D点群からの2D占有格子地図（Occupancy Grid Map）生成ツール
+# 2D OccupancyGridMap generator from PointCloud
 
 このプロジェクトは、3D点群データから2Dの占有格子地図を生成します。
 
 ## インストール
 
 1.  リポジトリをクローンします。
+
 2.  インストールスクリプトを実行して、依存関係（PCL、Eigen、YAML-CPP）をインストールします。
     ```bash
     ./install.bash
     ```
     *注意: `install.bash` は `sudo apt-get` を使用します。*
+
 
 ## ビルド方法
 
@@ -46,3 +48,4 @@
 - `map_metadata.yaml`: 地図のメタデータ (解像度、原点など)
 
 ダミーの入力ファイルとして、`data/sample.pcd` や `data/sample.ply`、`config/config.yaml` を作成・配置してテストすると良いでしょう。(これらのサンプルファイルは現時点ではリポジトリに存在しません。`sample.pcd` は現在の環境ではPCLのパーサーとの相性問題がある点に注意してください。)
+

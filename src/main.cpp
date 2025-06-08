@@ -145,5 +145,6 @@ int main(int argc, char* argv[]) {
 
     std::cout << "地図が " << output_dir << " に正常に出力されました。" << std::endl;
     std::cout << "プログラムは正常に終了しました。" << std::endl;
+
     return 0;
 }
