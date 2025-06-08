@@ -529,10 +529,23 @@ void PointCloudProcessor::visualizeCloud(
     viewer->addPointCloud<pcl::PointXYZ>(cloud, cloud_color_handler, "cloud_to_viz");
     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "cloud_to_viz");
 
-    viewer->addCoordinateSystem(1.0);
+    // 2. Create and add the XY plane at Z=0
+    pcl::ModelCoefficients::Ptr xy_plane(new pcl::ModelCoefficients());
+    xy_plane->values.resize(4);
+    xy_plane->values[0] = 0; // X component of normal
+    xy_plane->values[1] = 0; // Y component of normal
+    xy_plane->values[2] = 1; // Z component of normal (points upwards)
+    xy_plane->values[3] = 0; // d (distance from origin, so Z=0)
+    viewer->addPlane(*xy_plane, "xy_plane_z0");
+    viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 1.0, "xy_plane_z0"); // Blue
+    viewer->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_OPACITY, 0.5, "xy_plane_z0"); // Semi-transparent
+
+
+    // 3. Add a coordinate system marker
+    viewer->addCoordinateSystem(1.0); // Scale of 1.0 for the axis
     viewer->initCameraParameters();
-    // Example camera position - adjust as needed for better view
-    viewer->setCameraPosition(-2, -5, 2, 0, 0, 1);
+    // Example camera position - adjust as needed for better view, ensuring origin and plane are visible
+    viewer->setCameraPosition(0, -3, 3, 0, 0, 0); // Looking towards origin from -Y, Z slightly up
 
 
     std::cout << "Starting visualization loop for window '" << window_title << "'. Close the viewer window to continue." << std::endl;
