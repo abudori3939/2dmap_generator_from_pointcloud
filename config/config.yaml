@@ -3,6 +3,8 @@ robot_height: 1.5
 normal_estimation_radius: 0.5
 ground_normal_z_threshold: 0.9
 block_size: 10.0 # 並列処理で分割するブロックのサイズ [m] (フェーズ2)
+force_single_block_processing: false # trueにすると、点群全体を単一ブロックとして処理 (従来の動作に近い)
+min_points_for_block_processing: 100 # ブロック処理を行うための最小点数。これ未満の場合、そのブロックはスキップされる
 
 # クラスタリングパラメータ (EuclideanClusterExtraction用)
 min_cluster_size: 50    # クラスタを構成する最小点数
@@ -17,4 +19,4 @@ outlier_removal_std_dev_mul_thresh: 1.0
 free_space_kernel_size: 10
 obstacle_space_kernel_size: 5
 
-preview_map_on_exit: false # trueにすると、可能であれば終了前に地図をプレビュー表示 (現在は未実装)
+enable_visualization: false # trueにすると、PCLVisualizerによる3D点群/平面の可視化を有効にする

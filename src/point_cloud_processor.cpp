@@ -321,9 +321,11 @@ bool PointCloudProcessor::fitGlobalGroundPlane(
 }
 
 void PointCloudProcessor::visualizePlane(
+    bool enable_visualization_flag,
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
     const pcl::ModelCoefficients::ConstPtr& plane_coefficients) {
 
+    if (!enable_visualization_flag) return;
     if (!cloud) {
         std::cerr << "VisualizePlane: Input cloud is null." << std::endl;
         return;
@@ -539,9 +541,11 @@ bool PointCloudProcessor::translateCloudToZZero(
 }
 
 void PointCloudProcessor::visualizeCloud(
+    bool enable_visualization_flag,
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
     const std::string& window_title) {
 
+    if (!enable_visualization_flag) return;
     if (!cloud) {
         std::cerr << "VisualizeCloud: Input cloud is null." << std::endl;
         return;
@@ -627,10 +631,12 @@ bool PointCloudProcessor::extractNonHorizontalPoints(
 }
 
 void PointCloudProcessor::visualizeCombinedClouds(
+    bool enable_visualization_flag,
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& ground_cloud,
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& nonground_cloud,
     const std::string& window_title) {
 
+    if (!enable_visualization_flag) return;
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer(window_title));
     viewer->setBackgroundColor(0.1, 0.1, 0.15); // Slightly different background
 

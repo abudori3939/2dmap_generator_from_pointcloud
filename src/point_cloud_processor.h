@@ -64,6 +64,7 @@ public:
     );
 
     void visualizePlane(
+        bool enable_visualization_flag,
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
         const pcl::ModelCoefficients::ConstPtr& plane_coefficients
     );
@@ -84,6 +85,7 @@ public:
     );
 
     void visualizeCloud(
+        bool enable_visualization_flag,
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
         const std::string& window_title
     );
@@ -95,6 +97,7 @@ public:
     );
 
     void visualizeCombinedClouds(
+        bool enable_visualization_flag,
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& ground_cloud,
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& nonground_cloud,
         const std::string& window_title

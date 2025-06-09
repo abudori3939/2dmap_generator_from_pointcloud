@@ -45,13 +45,13 @@ namespace pipeline {
 namespace detail {
     static bool estimateNormals(PipelineData& data, proc::PointCloudProcessor& processor);
     static bool extractGroundAndNonHorizontal(PipelineData& data, proc::PointCloudProcessor& processor);
-    static void visualizeGroundCandidates(const PipelineData& data); // Const if only reading
+    static void visualizeGroundCandidates(bool enable_visualization_flag, const PipelineData& data); // Const if only reading
     static bool extractMainGroundCluster(PipelineData& data, proc::PointCloudProcessor& processor);
     static void visualizeMainGroundCluster(const PipelineData& data); // Const if only reading
     static bool fitGlobalGroundPlane(PipelineData& data, proc::PointCloudProcessor& processor);
-    static void visualizeGroundPlane(const PipelineData& data, proc::PointCloudProcessor& processor); // REMOVED CONST
+    static void visualizeGroundPlane(bool enable_visualization_flag, const PipelineData& data, proc::PointCloudProcessor& processor); // REMOVED CONST
     static bool transformClouds(PipelineData& data, proc::PointCloudProcessor& processor);
-    static void visualizeCombinedTransformedClouds(const PipelineData& data, proc::PointCloudProcessor& processor); // REMOVED CONST
+    static void visualizeCombinedTransformedClouds(bool enable_visualization_flag, const PipelineData& data, proc::PointCloudProcessor& processor); // REMOVED CONST
     static bool transformAllGroundCandidates(PipelineData& data);
     static bool processNonHorizontalCloud(PipelineData& data, proc::PointCloudProcessor& processor);
 }
@@ -148,7 +148,11 @@ static bool extractGroundAndNonHorizontal(PipelineData& data, proc::PointCloudPr
     return true;
 }
 
-static void visualizeGroundCandidates(const PipelineData& data) {
+static void visualizeGroundCandidates(bool enable_visualization_flag, const PipelineData& data) {
+    if (!enable_visualization_flag) {
+        std::cout << "可視化が無効なため、visualizeGroundCandidatesをスキップします。" << std::endl;
+        return;
+    }
     std::cout << "\n--- 地面候補点の可視化開始 ---" << std::endl;
     if (data.raw_cloud->points.empty()) {
         std::cout << "元の点群が空のため、可視化をスキップします。" << std::endl;
@@ -229,10 +233,14 @@ static bool fitGlobalGroundPlane(PipelineData& data, proc::PointCloudProcessor& 
     return true;
 }
 
-static void visualizeGroundPlane(const PipelineData& data, proc::PointCloudProcessor& processor) { // Removed const from processor
+static void visualizeGroundPlane(bool enable_visualization_flag, const PipelineData& data, proc::PointCloudProcessor& processor) { // Removed const from processor
+    if (!enable_visualization_flag) {
+        std::cout << "可視化が無効なため、visualizeGroundPlaneをスキップします。" << std::endl;
+        return;
+    }
     if (data.main_ground_cluster && !data.main_ground_cluster->points.empty() && data.plane_coefficients && !data.plane_coefficients->values.empty()) {
         std::cout << "\n--- 地面平面と主クラスタの可視化開始 ---" << std::endl;
-        processor.visualizePlane(data.main_ground_cluster, data.plane_coefficients);
+        processor.visualizePlane(enable_visualization_flag, data.main_ground_cluster, data.plane_coefficients);
         std::cout << "--- 地面平面と主クラスタの可視化終了 ---" << std::endl;
     }
 }
@@ -268,10 +276,14 @@ static bool transformClouds(PipelineData& data, proc::PointCloudProcessor& proce
     return true;
 }
 
-static void visualizeCombinedTransformedClouds(const PipelineData& data, proc::PointCloudProcessor& processor) { // Removed const from processor
+static void visualizeCombinedTransformedClouds(bool enable_visualization_flag, const PipelineData& data, proc::PointCloudProcessor& processor) { // Removed const from processor
+    if (!enable_visualization_flag) {
+        std::cout << "可視化が無効なため、visualizeCombinedTransformedCloudsをスキップします。" << std::endl;
+        return;
+    }
     if ((data.ground_transformed_cloud && !data.ground_transformed_cloud->points.empty()) ||
         (data.non_horizontal_transformed_cloud && !data.non_horizontal_transformed_cloud->points.empty())) {
-        processor.visualizeCombinedClouds(data.ground_transformed_cloud, data.non_horizontal_transformed_cloud, "Combined Transformed Clouds");
+        processor.visualizeCombinedClouds(enable_visualization_flag, data.ground_transformed_cloud, data.non_horizontal_transformed_cloud, "Combined Transformed Clouds");
     }
 }
 
@@ -352,34 +364,163 @@ static bool processNonHorizontalCloud(PipelineData& data, proc::PointCloudProces
 // --- End of detail namespace ---
 
 bool processPointCloud(PipelineData& data, proc::PointCloudProcessor& processor) {
-    std::cout << "\n--- 点群処理パイプライン開始 ---" << std::endl;
+    std::cout << "\n--- 点群ブロック処理パイプライン開始 ---" << std::endl;
 
-    if (!detail::estimateNormals(data, processor)) return false;
-    if (!detail::extractGroundAndNonHorizontal(data, processor)) return false;
-
-    detail::visualizeGroundCandidates(data); // Optional visualization
-
-    if (!detail::extractMainGroundCluster(data, processor)) return false;
-
-    // detail::visualizeMainGroundCluster(data); // Optional visualization, currently simplified
-
-    if (!detail::fitGlobalGroundPlane(data, processor)) {
-        // Allow to continue even if plane fitting fails, but transformations might be skipped or use identity
-        std::cout << "警告: 地面平面フィッティングが失敗またはスキップされました。変換は恒等変換を使用する可能性があります。" << std::endl;
-        data.rotation_matrix = Eigen::Matrix4f::Identity();
-        data.translation_matrix = Eigen::Matrix4f::Identity();
+    if (!data.raw_cloud || data.raw_cloud->empty()) {
+        std::cerr << "エラー: 入力点群 (raw_cloud) が空です。処理を中止します。" << std::endl;
+        return false;
     }
 
-    detail::visualizeGroundPlane(data, processor); // Optional
+    pcl::PointCloud<pcl::PointXYZ>::Ptr combined_global_ground_points(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr combined_global_obstacle_points(new pcl::PointCloud<pcl::PointXYZ>());
 
-    if (!detail::transformClouds(data, processor)) return false; // Handles main ground and non-horizontal
+    pcl::PointXYZ min_pt, max_pt;
+    pcl::getMinMax3D(*data.raw_cloud, min_pt, max_pt);
+    double block_size = data.app_config.block_size;
 
-    detail::visualizeCombinedTransformedClouds(data, processor); // Optional
+    if (block_size <= 0) {
+        std::cerr << "エラー: block_size が無効です (" << block_size << ")。正の値を設定してください。" << std::endl;
+        return false;
+    }
 
-    if (!detail::transformAllGroundCandidates(data)) return false;
-    if (!detail::processNonHorizontalCloud(data, processor)) return false;
+    int num_blocks_x = (max_pt.x > min_pt.x) ? static_cast<int>(std::ceil((max_pt.x - min_pt.x) / block_size)) : 1;
+    int num_blocks_y = (max_pt.y > min_pt.y) ? static_cast<int>(std::ceil((max_pt.y - min_pt.y) / block_size)) : 1;
+    if (data.raw_cloud->points.size() == 1) { // Handle single point cloud
+        num_blocks_x = 1;
+        num_blocks_y = 1;
+    }
 
-    std::cout << "--- 点群処理パイプライン終了 ---\n" << std::endl;
+    if (data.app_config.force_single_block_processing) {
+        std::cout << "情報: 'force_single_block_processing' が有効なため、点群全体を単一ブロックとして処理します。" << std::endl;
+        num_blocks_x = 1;
+        num_blocks_y = 1;
+    }
+    // Recalculate total_blocks and update the log message
+    int total_blocks = num_blocks_x * num_blocks_y;
+    if (data.app_config.force_single_block_processing) {
+         std::cout << "点群全体を単一ブロック (1x1) として処理します。" << std::endl;
+    } else {
+        std::cout << "点群を " << num_blocks_x << "x" << num_blocks_y << " = " << total_blocks << " 個のブロックに分割して処理します。" << std::endl;
+    }
+    int processed_block_count = 0;
+
+    for (int ix = 0; ix < num_blocks_x; ++ix) {
+        for (int iy = 0; iy < num_blocks_y; ++iy) {
+            processed_block_count++;
+            std::cout << "\n処理中のブロック: " << processed_block_count << "/" << total_blocks << " (x_idx=" << ix << ", y_idx=" << iy << ")" << std::endl;
+
+            double current_block_min_x, current_block_max_x, current_block_min_y, current_block_max_y;
+            if (data.app_config.force_single_block_processing) {
+                current_block_min_x = min_pt.x;
+                current_block_max_x = max_pt.x;
+                current_block_min_y = min_pt.y;
+                current_block_max_y = max_pt.y;
+            } else {
+                current_block_min_x = min_pt.x + ix * block_size;
+                current_block_max_x = min_pt.x + (ix + 1) * block_size;
+                current_block_min_y = min_pt.y + iy * block_size;
+                current_block_max_y = min_pt.y + (iy + 1) * block_size;
+            }
+
+            pcl::PointCloud<pcl::PointXYZ>::Ptr block_raw_cloud_filtered_x(new pcl::PointCloud<pcl::PointXYZ>());
+            pcl::PointCloud<pcl::PointXYZ>::Ptr block_raw_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+
+            pcl::PassThrough<pcl::PointXYZ> pass_x;
+            pass_x.setInputCloud(data.raw_cloud);
+            pass_x.setFilterFieldName("x");
+            pass_x.setFilterLimits(current_block_min_x, current_block_max_x);
+            pass_x.filter(*block_raw_cloud_filtered_x);
+            if (block_raw_cloud_filtered_x->empty()) {
+                std::cout << "ブロック " << processed_block_count << " はXフィルタリング後に空になりました。スキップします。" << std::endl;
+                continue;
+            }
+
+            pcl::PassThrough<pcl::PointXYZ> pass_y;
+            pass_y.setInputCloud(block_raw_cloud_filtered_x);
+            pass_y.setFilterFieldName("y");
+            pass_y.setFilterLimits(current_block_min_y, current_block_max_y);
+            pass_y.filter(*block_raw_cloud);
+            if (block_raw_cloud->empty()) {
+                std::cout << "ブロック " << processed_block_count << " はYフィルタリング後に空になりました。スキップします。" << std::endl;
+                continue;
+            }
+            std::cout << "ブロック " << processed_block_count << " のフィルタリング後点群サイズ: " << block_raw_cloud->size() << " 点" << std::endl; // Changed log message slightly for clarity
+
+            // New check for min_points_for_block_processing
+            if (block_raw_cloud->points.size() < static_cast<size_t>(data.app_config.min_points_for_block_processing)) {
+                std::cout << "ブロック " << processed_block_count << " の点数 (" << block_raw_cloud->points.size()
+                          << ") が閾値 (" << data.app_config.min_points_for_block_processing
+                          << ") 未満のため、処理をスキップします。" << std::endl;
+                continue; // Skip to the next block
+            }
+
+            PipelineData block_pipeline_data;
+            block_pipeline_data.app_config = data.app_config;
+            block_pipeline_data.raw_cloud = block_raw_cloud;
+            bool block_ok = true;
+
+            if (block_ok && !detail::estimateNormals(block_pipeline_data, processor)) { std::cerr << "ブロック " << processed_block_count << ": 法線推定に失敗。" << std::endl; block_ok = false; }
+            if (block_ok && !detail::extractGroundAndNonHorizontal(block_pipeline_data, processor)) { std::cerr << "ブロック " << processed_block_count << ": 地面/非水平要素の抽出に失敗。" << std::endl; block_ok = false; }
+            if (block_ok && !detail::extractMainGroundCluster(block_pipeline_data, processor)) { std::cerr << "ブロック " << processed_block_count << ": 主地面クラスタの抽出に失敗。" << std::endl; block_ok = false; }
+            if (block_ok && !detail::fitGlobalGroundPlane(block_pipeline_data, processor)) {
+                 std::cout << "ブロック " << processed_block_count << ": 地面平面フィッティングに失敗。恒等変換を使用します。" << std::endl;
+                 block_pipeline_data.rotation_matrix = Eigen::Matrix4f::Identity();
+                 block_pipeline_data.translation_matrix = Eigen::Matrix4f::Identity();
+            }
+            if (block_ok && !detail::transformClouds(block_pipeline_data, processor)) { std::cerr << "ブロック " << processed_block_count << ": 点群変換に失敗。" << std::endl; block_ok = false; }
+            if (block_ok && !detail::transformAllGroundCandidates(block_pipeline_data)) { std::cerr << "ブロック " << processed_block_count << ": 全地面候補の変換に失敗。" << std::endl; block_ok = false; }
+            if (block_ok && !detail::processNonHorizontalCloud(block_pipeline_data, processor)) { std::cerr << "ブロック " << processed_block_count << ": 非水平要素の処理に失敗。" << std::endl; block_ok = false; }
+
+            if (!block_ok) {
+                std::cerr << "ブロック " << processed_block_count << " の処理中にエラーが発生したため、このブロックの結果はスキップされます。" << std::endl;
+                continue;
+            }
+
+            Eigen::Matrix4f R_block = block_pipeline_data.rotation_matrix;
+            Eigen::Matrix4f T_block_z0 = block_pipeline_data.translation_matrix;
+            Eigen::Matrix4f R_block_inv = Eigen::Matrix4f::Identity();
+            R_block_inv.block<3,3>(0,0) = R_block.block<3,3>(0,0).transpose();
+            Eigen::Matrix4f T_block_z0_inv = Eigen::Matrix4f::Identity();
+            T_block_z0_inv.block<3,1>(0,3) = -T_block_z0.block<3,1>(0,3);
+            Eigen::Matrix4f global_transform_matrix = R_block_inv * T_block_z0_inv;
+
+            if (block_pipeline_data.all_ground_candidates_transformed_cloud && !block_pipeline_data.all_ground_candidates_transformed_cloud->empty()) {
+                pcl::PointCloud<pcl::PointXYZ>::Ptr block_ground_global(new pcl::PointCloud<pcl::PointXYZ>());
+                pcl::transformPointCloud(*block_pipeline_data.all_ground_candidates_transformed_cloud, *block_ground_global, global_transform_matrix);
+                *combined_global_ground_points += *block_ground_global;
+            }
+            if (block_pipeline_data.non_horizontal_filtered_cloud && !block_pipeline_data.non_horizontal_filtered_cloud->empty()) {
+                pcl::PointCloud<pcl::PointXYZ>::Ptr block_obstacles_global(new pcl::PointCloud<pcl::PointXYZ>());
+                pcl::transformPointCloud(*block_pipeline_data.non_horizontal_filtered_cloud, *block_obstacles_global, global_transform_matrix);
+                *combined_global_obstacle_points += *block_obstacles_global;
+            }
+            std::cout << "ブロック " << processed_block_count << " の処理完了。収集されたグローバル地面点 (累計): " << combined_global_ground_points->size() << ", 障害物点 (累計): " << combined_global_obstacle_points->size() << std::endl;
+        }
+    }
+
+    data.all_ground_candidates_transformed_cloud = combined_global_ground_points;
+    data.non_horizontal_filtered_cloud = combined_global_obstacle_points;
+
+    // Clear intermediate Ptr members in the main 'data' object
+    if(data.non_horizontal_downsampled_cloud) data.non_horizontal_downsampled_cloud->clear();
+    if(data.ground_transformed_cloud) data.ground_transformed_cloud->clear();
+    if(data.main_ground_cluster) data.main_ground_cluster->clear();
+    if(data.normals) data.normals->clear();
+    if(data.ground_candidates) data.ground_candidates->clear();
+    if(data.ground_candidate_indices) data.ground_candidate_indices->indices.clear();
+    if(data.non_horizontal_cloud) data.non_horizontal_cloud->clear();
+    if(data.plane_coefficients) data.plane_coefficients->values.clear();
+    if(data.plane_inliers) data.plane_inliers->indices.clear();
+    data.rotation_matrix = Eigen::Matrix4f::Identity();
+    data.translation_matrix = Eigen::Matrix4f::Identity();
+
+    std::cout << "全ブロック処理完了。最終的なグローバル地面点群サイズ: " << (data.all_ground_candidates_transformed_cloud ? data.all_ground_candidates_transformed_cloud->size() : 0) << std::endl;
+    std::cout << "最終的なグローバル障害物点群サイズ: " << (data.non_horizontal_filtered_cloud ? data.non_horizontal_filtered_cloud->size() : 0) << std::endl;
+
+    // Final visualization of combined clouds
+    detail::visualizeCombinedTransformedClouds(data.app_config.enable_visualization, data, processor);
+
+    std::cout << "--- 点群ブロック処理パイプライン終了 --- \n" << std::endl;
     return true;
 }
 
@@ -505,7 +646,7 @@ bool saveMap(const PipelineData& data, const std::string& output_dir) {
         return false;
     }
     std::cout << "地図が " << output_dir << " に正常に出力されました。" << std::endl;
-    if (data.app_config.preview_map_on_exit) {
+    if (data.app_config.enable_visualization) {
         std::cout << "\n情報: 地図プレビューは有効ですが、この環境では表示されません。" << pgm_file_path << std::endl;
     }
     return true;

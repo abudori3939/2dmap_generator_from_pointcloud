@@ -29,6 +29,28 @@ bool loadConfig(const std::string& filepath, Config& config) {
             }
         };
 
+        // Helper lambda to load a bool value or use default and print warning/info
+        auto load_bool_param = [&](const std::string& key, bool& param_to_set, const bool& default_val) {
+            if (yaml_file_root[key]) {
+                try {
+                    param_to_set = yaml_file_root[key].as<bool>();
+                } catch (const YAML::TypedBadConversion<bool>& e) {
+                    std::cerr << "警告: 設定ファイル内のキー '" << key << "' の型変換に失敗しました。"
+                              << "期待する型: bool, 実際の値: '" << yaml_file_root[key].Scalar() << "' (" << e.what() << "). "
+                              << "デフォルト値 (" << default_val << ") を使用します。" << std::endl;
+                    param_to_set = default_val;
+                } catch (const YAML::Exception& e) { // Catch other YAML errors for this key
+                     std::cerr << "警告: 設定項目 '" << key << "' の読み込み中にYAMLエラーが発生しました。デフォルト値 ("
+                               << default_val << ") を使用します。エラー: " << e.what() << std::endl;
+                    param_to_set = default_val;
+                }
+            } else {
+                std::cout << "情報: 設定ファイルに '" << key << "' が見つかりません。デフォルト値 ("
+                          << default_val << ") を使用します。" << std::endl;
+                param_to_set = default_val;
+            }
+        };
+
         // Helper lambda to load an int value or use default and print warning/info
         auto load_int_param = [&](const std::string& key, int& param_to_set, const int& default_val) {
             if (yaml_file_root[key]) {
@@ -56,6 +78,8 @@ bool loadConfig(const std::string& filepath, Config& config) {
         load_double_param("normal_estimation_radius", config.normal_estimation_radius, config.normal_estimation_radius);
         load_double_param("ground_normal_z_threshold", config.ground_normal_z_threshold, config.ground_normal_z_threshold);
         load_double_param("block_size", config.block_size, config.block_size);
+        load_bool_param("force_single_block_processing", config.force_single_block_processing, config.force_single_block_processing);
+        load_int_param("min_points_for_block_processing", config.min_points_for_block_processing, config.min_points_for_block_processing);
 
         // Load new integer parameters for clustering
         load_int_param("min_cluster_size", config.min_cluster_size, config.min_cluster_size);
@@ -92,26 +116,28 @@ bool loadConfig(const std::string& filepath, Config& config) {
         }
 
        // Load the new boolean parameter for map preview
-       if (yaml_file_root["preview_map_on_exit"]) {
+       if (yaml_file_root["enable_visualization"]) {
            try {
-               config.preview_map_on_exit = yaml_file_root["preview_map_on_exit"].as<bool>();
+               config.enable_visualization = yaml_file_root["enable_visualization"].as<bool>();
            } catch (const YAML::TypedBadConversion<bool>& e) {
-               std::cerr << "警告: 設定ファイル内のキー 'preview_map_on_exit' の型変換に失敗しました。"
-                         << "期待する型: bool, 実際の値: '" << yaml_file_root["preview_map_on_exit"].Scalar() << "' (" << e.what() << "). "
+               std::cerr << "警告: 設定ファイル内のキー 'enable_visualization' の型変換に失敗しました。"
+                         << "期待する型: bool, 実際の値: '" << yaml_file_root["enable_visualization"].Scalar() << "' (" << e.what() << "). "
                          << "デフォルト値 (" << false << ") を使用します。" << std::endl;
-               config.preview_map_on_exit = false; // Default to false on error
+               config.enable_visualization = false; // Default to false on error
            } catch (const YAML::Exception& e) {
-               std::cerr << "警告: 設定項目 'preview_map_on_exit' の読み込み中にYAMLエラーが発生しました。デフォルト値 ("
+               std::cerr << "警告: 設定項目 'enable_visualization' の読み込み中にYAMLエラーが発生しました。デフォルト値 ("
                          << false << ") を使用します。エラー: " << e.what() << std::endl;
-               config.preview_map_on_exit = false; // Default to false on error
+               config.enable_visualization = false; // Default to false on error
            }
        } else {
-           std::cout << "情報: 設定ファイルに 'preview_map_on_exit' が見つかりません。デフォルト値 ("
+           std::cout << "情報: 設定ファイルに 'enable_visualization' が見つかりません。デフォルト値 ("
                      << false << ") を使用します。" << std::endl;
-           config.preview_map_on_exit = false; // Default to false if not found
+           config.enable_visualization = false; // Default to false if not found
        }
        // Also print the loaded value
-       std::cout << "  プレビュー表示 (終了時): " << (config.preview_map_on_exit ? "有効" : "無効") << std::endl;
+       std::cout << "  可視化 (PCLVisualizer): " << (config.enable_visualization ? "有効" : "無効") << std::endl;
+        std::cout << "  単一ブロック強制処理: " << (config.force_single_block_processing ? "有効" : "無効") << std::endl;
+        std::cout << "  ブロック処理最小点数: " << config.min_points_for_block_processing << " 点" << std::endl;
         std::cout << "  フリースペース充填カーネルサイズ: " << config.free_space_kernel_size << std::endl;
         std::cout << "  障害物スペース充填カーネルサイズ: " << config.obstacle_space_kernel_size << std::endl;
 

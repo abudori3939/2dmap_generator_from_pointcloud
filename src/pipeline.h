@@ -18,6 +18,16 @@
 
 namespace pipeline {
 
+struct BlockOutput {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr global_ground_points;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr global_obstacle_points;
+
+    BlockOutput() :
+        global_ground_points(new pcl::PointCloud<pcl::PointXYZ>()),
+        global_obstacle_points(new pcl::PointCloud<pcl::PointXYZ>())
+    {}
+};
+
 struct PipelineData {
     // Input and Config
     std::string pointcloud_file_path;

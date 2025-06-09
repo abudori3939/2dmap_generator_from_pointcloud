@@ -25,7 +25,11 @@ struct Config {
     int outlier_removal_mean_k = 50;
     double outlier_removal_std_dev_mul_thresh = 1.0;
 
-    bool preview_map_on_exit = false; // 地図プレビュー表示フラグ
+    bool enable_visualization = false; // 地図プレビュー表示フラグ
+
+    // Block processing parameters
+    bool force_single_block_processing = false;
+    int min_points_for_block_processing = 100; // Default threshold
 
     // Map processing parameters
     int free_space_kernel_size = 3;    // フリースペース充填カーネルサイズ
